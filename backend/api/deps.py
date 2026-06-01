@@ -9,7 +9,7 @@ Supports two auth modes:
 import asyncio
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Query, Security
+from fastapi import Depends, HTTPException, Query, Security, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client, create_client
 
@@ -17,6 +17,15 @@ from config import get_settings
 
 settings = get_settings()
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_language(request: Request) -> str:
+    """Detect language from Accept-Language header."""
+    accept_lang = request.headers.get("Accept-Language", "en")
+    if "ar" in accept_lang.lower():
+        return "ar"
+    return "en"
+
 
 
 def get_supabase() -> Client:

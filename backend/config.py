@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     next_public_supabase_url: str = ""
     next_public_supabase_anon_key: str = ""
     next_public_app_url: str = "http://localhost:3000"
+    language_detection_enabled: bool = True
+
+    # Payments - HyperPay
+    hyperpay_entity_id: str = ""
+    hyperpay_access_token: str = ""
+    hyperpay_base_url: str = "https://test.oppwa.com"
+
+    # Payments - BNPL
+    tabby_api_key: str = ""
+    tabby_base_url: str = "https://api.tabby.ai"
+    tamara_api_key: str = ""
+    tamara_base_url: str = "https://api.tamara.co"
 
     # Tier credit limits
     credits_basic: int = 5_000
