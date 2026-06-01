@@ -3,6 +3,9 @@ T05 — POST /api/tasks
 T06 — GET /api/tasks/{id}
 T07 — GET /api/tasks (paginated)
 T17 — GET /api/tasks/stream (SSE live updates)
+T73 — Rate limiting (POST: 10/min, GET: 30/min)
+T75 — Task timeout (5 min max)
+T76 — Retry logic (one retry on failure)
 """
 
 import asyncio
@@ -20,12 +23,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user_id
 from core.langgraph_pipeline import run_task
+from core.rate_limiter import limiter
 from core.usage_tracker import check_credits_before_task, deduct_credits_after_task
 from db.models import Task, TaskStatus
 from db.session import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+
+# T75 — Maximum task runtime in seconds
+TASK_TIMEOUT_SECONDS = 300  # 5 minutes
 
 
 # ──────────────────────────────────────────────
@@ -71,11 +78,21 @@ class SingleTask(BaseModel):
 # Background task runner
 # ──────────────────────────────────────────────
 
-async def _execute_task_bg(task_id: str, user_id: str, prompt: str) -> None:
-    """Run the LangGraph pipeline and update the task record."""
+async def _execute_task_bg(task_id: str, user_id: str, prompt: str, retry_count: int = 0) -> None:
+    """Run the LangGraph pipeline and update the task record.
+    
+    T75 — Times out after TASK_TIMEOUT_SECONDS. On timeout, marks as failed with TIMEOUT error.
+    T76 — Retries once automatically on failure.
+    """
     from db.session import AsyncSessionLocal
 
     async with AsyncSessionLocal() as session:
+        # Get existing metadata
+        result = await session.execute(select(Task).where(Task.id == UUID(task_id)))
+        task_row = result.scalar_one_or_none()
+        existing_meta = dict(task_row.metadata) if task_row and task_row.metadata else {}
+        metadata_updates = {**existing_meta, "retry_count": retry_count}
+
         # Mark as running
         await session.execute(
             update(Task)
@@ -84,9 +101,41 @@ async def _execute_task_bg(task_id: str, user_id: str, prompt: str) -> None:
         )
         await session.commit()
 
-        outcome = await run_task(task_id=task_id, user_id=user_id, prompt=prompt)
+        # T75 — Run with timeout
+        try:
+            outcome = await asyncio.wait_for(
+                run_task(task_id=task_id, user_id=user_id, prompt=prompt),
+                timeout=TASK_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            outcome = {
+                "result": "",
+                "task_type": "simple",
+                "tokens_used": 0,
+                "credits_used": 1,
+                "error": "TIMEOUT",
+                "metadata": {"timeout": True, "timeout_seconds": TASK_TIMEOUT_SECONDS},
+            }
 
         if outcome["error"]:
+            # Merge retry metadata
+            meta = {**outcome.get("metadata", {}), **metadata_updates}
+
+            # T76 — Retry once on failure (not for timeout errors)
+            if retry_count == 0 and outcome["error"] != "TIMEOUT":
+                logger.info("Task %s failed, retrying once (retry_count=0)", task_id)
+                await session.execute(
+                    update(Task)
+                    .where(Task.id == UUID(task_id))
+                    .values(
+                        status=TaskStatus.pending,
+                        metadata=meta,
+                    )
+                )
+                await session.commit()
+                # Re-run
+                return await _execute_task_bg(task_id, user_id, prompt, retry_count=1)
+
             await session.execute(
                 update(Task)
                 .where(Task.id == UUID(task_id))
@@ -96,7 +145,7 @@ async def _execute_task_bg(task_id: str, user_id: str, prompt: str) -> None:
                     tokens_used=outcome["tokens_used"],
                     credits_used=outcome["credits_used"],
                     task_type=outcome["task_type"],
-                    metadata=outcome["metadata"],
+                    metadata=meta,
                     completed_at=datetime.utcnow(),
                 )
             )
@@ -110,7 +159,7 @@ async def _execute_task_bg(task_id: str, user_id: str, prompt: str) -> None:
                     tokens_used=outcome["tokens_used"],
                     credits_used=outcome["credits_used"],
                     task_type=outcome["task_type"],
-                    metadata=outcome["metadata"],
+                    metadata={**outcome.get("metadata", {}), **metadata_updates},
                     completed_at=datetime.utcnow(),
                 )
             )
@@ -126,9 +175,11 @@ async def _execute_task_bg(task_id: str, user_id: str, prompt: str) -> None:
 # ──────────────────────────────────────────────
 
 @router.post("", response_model=SingleTask, status_code=202)
+@limiter.limit("10/minute")
 async def create_task(
     body: TaskCreate,
     background_tasks: BackgroundTasks,
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SingleTask:
@@ -161,7 +212,9 @@ async def create_task(
 # ──────────────────────────────────────────────
 
 @router.get("/stream")
+@limiter.limit("30/minute")
 async def stream_tasks(
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
@@ -233,8 +286,10 @@ async def stream_tasks(
 # ──────────────────────────────────────────────
 
 @router.get("/{task_id}", response_model=SingleTask)
+@limiter.limit("30/minute")
 async def get_task(
     task_id: UUID,
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SingleTask:
@@ -252,11 +307,13 @@ async def get_task(
 # ──────────────────────────────────────────────
 
 @router.get("", response_model=PaginatedTasks)
+@limiter.limit("30/minute")
 async def list_tasks(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
     status: str | None = Query(default=None),
     automation_id: UUID | None = Query(default=None),
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedTasks:

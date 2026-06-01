@@ -5,12 +5,13 @@ Skills marketplace routes — Phase 3 (T48-T52).
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user_id
+from core.rate_limiter import limiter
 from db.models import Skill, UserSkill, Automation
 from db.session import get_db
 from db.seed_skills import seed_skills as perform_seed
@@ -52,7 +53,9 @@ class ListSkills(BaseModel):
 # ──────────────────────────────────────────────
 
 @router.post("/seed", status_code=200)
+@limiter.limit("10/minute")
 async def seed_skills_endpoint(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ):
@@ -62,7 +65,9 @@ async def seed_skills_endpoint(
 
 
 @router.get("", response_model=ListSkills)
+@limiter.limit("30/minute")
 async def list_skills(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> ListSkills:
@@ -77,7 +82,9 @@ async def list_skills(
 
 
 @router.get("/mine", response_model=ListSkills)
+@limiter.limit("30/minute")
 async def list_my_skills(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> ListSkills:
@@ -89,8 +96,10 @@ async def list_my_skills(
 
 
 @router.post("/{slug}/activate", response_model=SingleSkill)
+@limiter.limit("10/minute")
 async def activate_skill(
     slug: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> SingleSkill:
@@ -99,7 +108,10 @@ async def activate_skill(
     result = await db.execute(select(Skill).where(Skill.slug == slug))
     skill = result.scalar_one_or_none()
     if not skill:
-        raise HTTPException(status_code=404, detail="Skill not found")
+        raise HTTPException(status_code=404, detail={
+            "code": "SKILL_NOT_FOUND",
+            "message": f"Skill '{slug}' not found.",
+        })
 
     # 2. Check if already activated
     existing_res = await db.execute(
@@ -140,8 +152,10 @@ async def activate_skill(
 
 
 @router.delete("/{slug}/deactivate")
+@limiter.limit("10/minute")
 async def deactivate_skill(
     slug: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ):
@@ -150,7 +164,10 @@ async def deactivate_skill(
     result = await db.execute(select(Skill).where(Skill.slug == slug))
     skill = result.scalar_one_or_none()
     if not skill:
-        raise HTTPException(status_code=404, detail="Skill not found")
+        raise HTTPException(status_code=404, detail={
+            "code": "SKILL_NOT_FOUND",
+            "message": f"Skill '{slug}' not found.",
+        })
 
     # 2. Remove UserSkill
     await db.execute(

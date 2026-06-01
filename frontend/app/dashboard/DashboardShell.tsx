@@ -58,6 +58,17 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/dashboard/usage",
+    label: "Usage",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="2" y="10" width="3" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3" />
+        <rect x="6.5" y="6" width="3" height="8" rx="0.5" stroke="currentColor" strokeWidth="1.3" />
+        <rect x="11" y="2" width="3" height="12" rx="0.5" stroke="currentColor" strokeWidth="1.3" />
+      </svg>
+    ),
+  },
+  {
     href: "/dashboard/settings",
     label: "Settings",
     icon: (
@@ -86,6 +97,8 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   const [usage, setUsage] = useState<UsageData>({ credits_used: 0, credits_limit: 5000, tier: "basic" });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const getToken = useCallback(async () => {
     const { data: { session } } = await createClient().auth.getSession();
@@ -108,6 +121,37 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
       } catch {}
     }
     fetchUsage();
+  }, [getToken]);
+
+  // T70 — Handle upgrade checkout
+  const handleUpgrade = useCallback(async (tier: "basic" | "pro") => {
+    setCheckoutLoading(true);
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ tier }),
+      });
+      if (res.ok) {
+        const { data } = await res.json();
+        if (data?.url) {
+          window.location.href = data.url;
+        }
+      } else {
+        const body = await res.json();
+        console.error("Checkout failed:", body.error);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCheckoutLoading(false);
+      setShowUpgradeModal(false);
+    }
   }, [getToken]);
 
   // T31 — Poll pending approvals every 5s
@@ -251,6 +295,16 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
             creditsLimit={usage.credits_limit}
             tier={usage.tier}
           />
+
+          {/* T70 — Upgrade button when on basic/low credits */}
+          {usage.tier !== "pro" && usage.tier !== "enterprise" && (
+            <button
+              onClick={() => setShowUpgradeModal(true)}
+              className="ml-3 px-3 py-1.5 bg-[#D4A84B]/10 border border-[#D4A84B]/20 text-[#D4A84B] text-xs font-medium rounded-lg hover:bg-[#D4A84B]/20 transition-colors"
+            >
+              Upgrade
+            </button>
+          )}
         </header>
 
         {/* Page content */}
@@ -268,6 +322,90 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
             setPendingApprovals((prev) => prev.filter((a) => a.id !== id))
           }
         />
+      )}
+
+      {/* T70 — Upgrade modal */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+          <div className="bg-[#0D0D0D] border border-[#181818] rounded-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-5 border-b border-[#181818] flex justify-between items-center">
+              <h2 className="font-display text-lg font-semibold text-[#E5E0D8]">Upgrade Plan</h2>
+              <button onClick={() => setShowUpgradeModal(false)} className="text-[#555] hover:text-[#888]">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Basic plan info */}
+              <div className="bg-[#0A0A0A] border border-[#1E1E1E] rounded-xl p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="font-display text-base font-semibold text-[#E5E0D8]">Basic</h3>
+                    <p className="text-xs text-[#555]">Starting plan</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-semibold text-[#E5E0D8]">AED 150</p>
+                    <p className="text-[10px] text-[#555]">/month</p>
+                  </div>
+                </div>
+                <ul className="space-y-1.5 text-xs text-[#888] mb-4">
+                  <li>✓ 5,000 credits / month</li>
+                  <li>✓ 50 tasks / month</li>
+                  <li>✓ 5 automations</li>
+                  <li>✓ WhatsApp integration</li>
+                </ul>
+                {usage.tier === "basic" ? (
+                  <span className="block text-center text-xs text-[#555] py-2">Current plan</span>
+                ) : (
+                  <button
+                    onClick={() => handleUpgrade("basic")}
+                    disabled={checkoutLoading}
+                    className="w-full px-4 py-2 bg-[#1A1A1A] text-[#888] text-sm font-medium rounded-lg hover:bg-[#222] transition-colors disabled:opacity-40"
+                  >
+                    {checkoutLoading ? "Loading…" : "Downgrade to Basic"}
+                  </button>
+                )}
+              </div>
+
+              {/* Pro plan */}
+              <div className="bg-[#0A0A0A] border border-[#D4A84B]/30 rounded-xl p-5 relative">
+                <span className="absolute -top-2.5 right-4 px-2 py-0.5 bg-[#D4A84B] text-black text-[10px] font-semibold rounded-full">
+                  RECOMMENDED
+                </span>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="font-display text-base font-semibold text-[#E5E0D8]">Pro</h3>
+                    <p className="text-xs text-[#555]">Best for power users</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-semibold text-[#E5E0D8]">AED 500</p>
+                    <p className="text-[10px] text-[#555]">/month</p>
+                  </div>
+                </div>
+                <ul className="space-y-1.5 text-xs text-[#888] mb-4">
+                  <li>✓ 20,000 credits / month</li>
+                  <li>✓ 200 tasks / month</li>
+                  <li>✓ Unlimited automations</li>
+                  <li>✓ WhatsApp integration</li>
+                  <li>✓ API access</li>
+                  <li>✓ Priority support</li>
+                </ul>
+                {usage.tier === "pro" ? (
+                  <span className="block text-center text-xs text-[#555] py-2">Current plan</span>
+                ) : (
+                  <button
+                    onClick={() => handleUpgrade("pro")}
+                    disabled={checkoutLoading}
+                    className="w-full px-4 py-2 bg-[#D4A84B] text-black text-sm font-semibold rounded-lg hover:bg-[#C59B3F] transition-colors disabled:opacity-40"
+                  >
+                    {checkoutLoading ? "Loading…" : "Upgrade to Pro"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
