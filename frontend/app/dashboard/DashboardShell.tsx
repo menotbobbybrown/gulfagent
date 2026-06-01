@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { UsageBar } from "../components/UsageBar";
 import { ApprovalModal } from "../components/ApprovalModal";
+import { useRTL } from "@/lib/rtl-provider";
 import type { User } from "@supabase/supabase-js";
 
 interface PendingApproval {
@@ -94,6 +95,7 @@ interface UsageData {
 export function DashboardShell({ user, children }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { dir, toggleDir } = useRTL();
   const [usage, setUsage] = useState<UsageData>({ credits_used: 0, credits_limit: 5000, tier: "basic" });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
@@ -197,11 +199,16 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
       {/* Sidebar */}
       <aside
         className={`
-          fixed lg:relative z-30 flex flex-col w-56 h-full bg-[#0D0D0D] border-r border-[#181818]
+          fixed lg:relative z-30 flex flex-col w-56 h-full bg-[#0D0D0D] border-e border-[#181818]
           transition-transform duration-200 ease-in-out
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+          ${sidebarOpen 
+            ? "translate-x-0" 
+            : (dir === "rtl" ? "translate-x-full lg:translate-x-0" : "-translate-x-full lg:translate-x-0")
+          }
+          ${dir === "rtl" ? "right-0" : "left-0"}
         `}
       >
+
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-5 py-5 border-b border-[#181818]">
           <div className="w-7 h-7 rounded-lg bg-[#D4A84B]/10 border border-[#D4A84B]/20 flex items-center justify-center flex-shrink-0">
@@ -243,7 +250,19 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
         </nav>
 
         {/* User section */}
-        <div className="px-3 py-4 border-t border-[#181818]">
+        <div className="px-3 py-4 border-t border-[#181818] space-y-2">
+          <button
+            onClick={toggleDir}
+            className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs font-medium text-[#666] hover:text-[#C8C0B4] hover:bg-[#141414] transition-all"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+            {dir === "ltr" ? "العربية (Arabic)" : "English"}
+          </button>
+
           <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[#141414] transition-colors group cursor-default">
             <div className="w-7 h-7 rounded-lg bg-[#D4A84B]/20 flex items-center justify-center text-xs font-semibold text-[#D4A84B] flex-shrink-0">
               {initials}
@@ -263,6 +282,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
             </button>
           </div>
         </div>
+
       </aside>
 
       {/* Main */}
@@ -282,7 +302,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 
           {/* Approval badge */}
           {pendingApprovals.length > 0 && (
-            <div className="flex items-center gap-1.5 mr-3">
+            <div className="flex items-center gap-1.5 me-3">
               <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse" />
               <span className="text-xs text-[#F59E0B] font-medium">
                 {pendingApprovals.length} approval{pendingApprovals.length > 1 ? "s" : ""}
@@ -300,11 +320,12 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           {usage.tier !== "pro" && usage.tier !== "enterprise" && (
             <button
               onClick={() => setShowUpgradeModal(true)}
-              className="ml-3 px-3 py-1.5 bg-[#D4A84B]/10 border border-[#D4A84B]/20 text-[#D4A84B] text-xs font-medium rounded-lg hover:bg-[#D4A84B]/20 transition-colors"
+              className="ms-3 px-3 py-1.5 bg-[#D4A84B]/10 border border-[#D4A84B]/20 text-[#D4A84B] text-xs font-medium rounded-lg hover:bg-[#D4A84B]/20 transition-colors"
             >
               Upgrade
             </button>
           )}
+
         </header>
 
         {/* Page content */}

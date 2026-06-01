@@ -58,12 +58,18 @@ async def _get_or_create_user_by_phone(session: AsyncSession, phone: str) -> Use
 
 async def _link_phone_to_user(session: AsyncSession, user_id: UUID, phone: str) -> None:
     """T39 — Store E.164 phone on user row."""
+    # T90 — Auto-set preferred language to Arabic for GCC numbers
+    preferred_lang = "en"
+    if phone.startswith(("971", "966", "974", "965", "973", "968")):
+        preferred_lang = "ar"
+        
     await session.execute(
         update(User)
         .where(User.id == user_id)
-        .values(phone=f"+{phone}")
+        .values(phone=f"+{phone}", preferred_language=preferred_lang)
     )
     await session.commit()
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -200,12 +206,24 @@ async def _handle_message(
     # Look up user by phone number
     user = await _get_or_create_user_by_phone(db, phone)
     if not user:
-        await whatsapp.send_text(
-            phone,
-            "👋 Welcome to GulfAgent! To get started, please sign up at our dashboard "
-            "and link your WhatsApp number in Settings.",
-        )
+        # T90 — Arabic welcome message for GCC numbers
+        is_gcc = phone.startswith(("971", "966", "974", "965", "973", "968"))
+        if is_gcc:
+            welcome = (
+                "مرحباً بك في GulfAgent! 👋\n\n"
+                "أنا مساعدك الذكي لأتمتة المهام في منطقة الخليج. "
+                "للبدء، يرجى التسجيل عبر الرابط التالي وربط رقم هاتفك في الإعدادات:\n"
+                f"{settings.next_public_app_url}/login"
+            )
+        else:
+            welcome = (
+                "👋 Welcome to GulfAgent! To get started, please sign up at our dashboard "
+                "and link your WhatsApp number in Settings:\n"
+                f"{settings.next_public_app_url}/login"
+            )
+        await whatsapp.send_text(phone, welcome)
         return
+
 
     # T37 — Check if this is an approval Y/N reply
     upper = text.upper().strip()

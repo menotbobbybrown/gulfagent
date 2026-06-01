@@ -36,6 +36,7 @@ from api.billing import router as billing_router
 from api.usage import router as usage_router
 from api.approvals import router as approvals_router
 from api.users import router as users_router
+from api.admin import router as admin_router
 from agents.scheduler_agent import scheduler
 from config import get_settings
 from core.rate_limiter import limiter
@@ -147,6 +148,8 @@ app.include_router(billing_router)
 app.include_router(usage_router)
 app.include_router(approvals_router)
 app.include_router(users_router)
+app.include_router(admin_router)
+
 
 
 # ──────────────────────────────────────────────

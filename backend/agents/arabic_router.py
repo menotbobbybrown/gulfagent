@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 
 import httpx
 
@@ -58,13 +59,22 @@ async def run_ollama(
         payload["system"] = system_prompt
 
     try:
+        start_time = datetime.now()
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(f"{base_url}/api/generate", json=payload)
             resp.raise_for_status()
             data = resp.json()
+            end_time = datetime.now()
+            latency = (end_time - start_time).total_seconds()
+            
             text = data.get("response", "")
             # Ollama returns eval_count (output tokens) + prompt_eval_count
             tokens = data.get("eval_count", 0) + data.get("prompt_eval_count", 0)
+            
+            logger.info(
+                "Ollama success: model=%s, tokens=%d, latency=%.2fs", 
+                model, tokens, latency
+            )
             return text, tokens
     except httpx.ConnectError:
         logger.warning("Ollama not reachable at %s — falling back to Claude", base_url)
@@ -75,10 +85,12 @@ async def run_ollama(
 
 
 GULF_AGENT_SYSTEM_AR = (
-    "أنت GulfAgent، مساعد ذكاء اصطناعي متخصص في مساعدة الشركات في منطقة الخليج العربي. "
-    "تساعد في المهام البحثية والتحليلية وصياغة المراسلات والعمليات التجارية الإقليمية. "
-    "كن موجزاً وعملياً. أجب دائماً باللغة العربية."
+    "أنت GulfAgent، مساعد ذكاء اصطناعي خبير ومتخصص في خدمة الشركات والمؤسسات في دول مجلس التعاون الخليجي (الإمارات، السعودية، قطر، الكويت، البحرين، عمان). "
+    "تساعد في أتمتة المهام، صياغة الخطابات الرسمية، تحليل البيانات، وتقديم المشورة التجارية المتوافقة مع العادات والقوانين المحلية في المنطقة. "
+    "يجب أن تكون إجاباتك مهنية، دقيقة، وباللغة العربية الفصحى (أو اللهجة البيضاء الخليجية إذا كان ذلك مناسباً للسياق). "
+    "تجنب الإطالة غير الضرورية وركز على الحلول العملية."
 )
+
 
 GULF_AGENT_SYSTEM_EN = (
     "You are GulfAgent, an AI assistant specialised in helping GCC businesses "

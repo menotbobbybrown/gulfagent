@@ -155,7 +155,12 @@ export default function SettingsPage() {
 
           {/* Language preference */}
           <div className="p-5">
-            <h2 className="text-xs font-medium text-[#555] uppercase tracking-wide mb-3">Language</h2>
+            <h2 className="text-xs font-medium text-[#555] uppercase tracking-wide mb-1">Language</h2>
+            <p className="text-xs text-[#444] mb-3">
+              Select your preferred language for WhatsApp communications and AI responses.
+              <br />
+              <span className="text-[#D4A84B]/80 italic">Arabic is recommended for Gulf-based tasks.</span>
+            </p>
             <div className="flex gap-2">
               {(["en", "ar"] as const).map((lang) => (
                 <button
@@ -167,11 +172,12 @@ export default function SettingsPage() {
                       : "bg-[#0A0A0A] border-[#2A2A2A] text-[#666] hover:text-[#888]"
                   }`}
                 >
-                  {lang === "en" ? "English" : "العربية"}
+                  {lang === "en" ? "English" : "العربية (Arabic)"}
                 </button>
               ))}
             </div>
           </div>
+
         </div>
 
         {/* Session */}

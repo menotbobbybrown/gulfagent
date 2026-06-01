@@ -79,21 +79,42 @@ async def classify_task(state: AgentState) -> AgentState:
     T25: Use Claude to classify whether the task needs a browser.
     Fast single-token response (max_tokens=5).
     Falls back to keyword heuristic if API call fails.
+    T83: Also detect Arabic language early.
     """
+    from agents.arabic_router import detect_arabic
     prompt = state["prompt"]
+    
+    metadata = state.get("metadata", {})
+    if settings.language_detection_enabled:
+        is_arabic = detect_arabic(prompt)
+        metadata["language"] = "ar" if is_arabic else "en"
 
     # Fast keyword pre-screen to avoid LLM call for obvious cases
     simple_keywords = ["draft", "write", "summarise", "summarize", "explain",
                        "calculate", "translate", "list", "compare", "analyse", "analyze"]
     browser_keywords = ["browse", "website", "url", "http", "scrape", "monitor price",
-                        "fill form", "log in", "login", "check on noon", "check on amazon",
+                        "fill form", "log in", "login",
                         "navigate to", "open the", "go to the", "find on", "search on"]
+    
+    connector_map = {
+        "careem": "connector_careem",
+        "noon": "connector_noon",
+        "talabat": "connector_talabat",
+        "dubai now": "connector_dubai_now",
+        "dubainow": "connector_dubai_now"
+    }
 
     pl = prompt.lower()
+    for kw, task_type in connector_map.items():
+        if kw in pl:
+            return {**state, "task_type": task_type, "metadata": metadata}
+
     if any(kw in pl for kw in browser_keywords):
-        return {**state, "task_type": "browser"}
+        return {**state, "task_type": "browser", "metadata": metadata}
     if any(kw in pl for kw in simple_keywords):
-        return {**state, "task_type": "simple"}
+        return {**state, "task_type": "simple", "metadata": metadata}
+
+
 
     # LLM classification
     try:
@@ -112,7 +133,8 @@ async def classify_task(state: AgentState) -> AgentState:
         logger.warning("Classifier LLM call failed (%s), defaulting to simple", e)
         task_type = "simple"
 
-    return {**state, "task_type": task_type}
+    return {**state, "task_type": task_type, "metadata": metadata}
+
 
 
 # ──────────────────────────────────────────────
@@ -228,12 +250,62 @@ async def execute_browser(state: AgentState) -> AgentState:
         agent.cleanup()
 
 
+async def execute_connector(state: AgentState) -> AgentState:
+    """Execute specialized GCC connectors (Careem, Noon, Talabat, DubaiNow)."""
+    from connectors import CareemConnector, NoonConnector, TalabatConnector, DubaiNowConnector
+    
+    task_type = state["task_type"]
+    prompt = state["prompt"]
+    task_id = state["task_id"]
+    user_id = state["user_id"]
+    
+    connector_classes = {
+        "connector_careem": CareemConnector,
+        "connector_noon": NoonConnector,
+        "talabat": TalabatConnector, # wait, classifier uses connector_talabat
+        "connector_talabat": TalabatConnector,
+        "connector_dubai_now": DubaiNowConnector,
+    }
+    
+    cls = connector_classes.get(task_type)
+    if not cls:
+        return {**state, "error": f"Unknown connector: {task_type}"}
+        
+    connector = cls(task_id=task_id, user_id=user_id)
+    try:
+        # Most connectors will use the browser internally via BrowserAgent
+        res = await connector.run(prompt)
+        if res.get("error"):
+            return {**state, "error": res["error"]}
+            
+        data = res.get("data", {})
+        # Format the structured data into a human-readable response using LLM
+        from agents.arabic_router import route_to_llm
+        format_prompt = f"Format the following structured data into a helpful response for the user:\n\n{data}\n\nUser original request: {prompt}"
+        formatted_text, tokens, model_used = await route_to_llm(format_prompt)
+        
+        return {
+            **state,
+            "result": formatted_text,
+            "tokens_used": tokens,
+            "credits_used": 50, # Connectors have a base cost
+            "metadata": {**state.get("metadata", {}), "connector_data": data, "model": model_used}
+        }
+    except Exception as e:
+        logger.exception("Connector %s failed", task_type)
+        return {**state, "error": str(e)}
+
+
 # ──────────────────────────────────────────────
 # Router
 # ──────────────────────────────────────────────
 
-def route_by_type(state: AgentState) -> Literal["execute_simple", "execute_browser"]:
-    return "execute_browser" if state.get("task_type") == "browser" else "execute_simple"
+def route_by_type(state: AgentState) -> Literal["execute_simple", "execute_browser", "execute_connector"]:
+    tt = state.get("task_type", "simple")
+    if tt.startswith("connector_"):
+        return "execute_connector"
+    return "execute_browser" if tt == "browser" else "execute_simple"
+
 
 
 # ──────────────────────────────────────────────
@@ -246,6 +318,7 @@ def _build_graph() -> Any:
     builder.add_node("classify", classify_task)
     builder.add_node("execute_simple", execute_simple_llm)
     builder.add_node("execute_browser", execute_browser)
+    builder.add_node("execute_connector", execute_connector)
 
     builder.set_entry_point("classify")
     builder.add_conditional_edges(
@@ -254,10 +327,13 @@ def _build_graph() -> Any:
         {
             "execute_simple": "execute_simple",
             "execute_browser": "execute_browser",
+            "execute_connector": "execute_connector",
         },
     )
     builder.add_edge("execute_simple", END)
     builder.add_edge("execute_browser", END)
+    builder.add_edge("execute_connector", END)
+
 
     return builder.compile()
 
