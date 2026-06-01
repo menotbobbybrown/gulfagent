@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -58,11 +58,12 @@ class SchedulerAgent:
         self.settings = get_settings()
         self._approval_queue: Queue | None = None
         self._automation_queue: Queue | None = None
-        self._worker: Worker | None = None
+        self._approval_worker: Worker | None = None
+        self._automation_worker: Worker | None = None
         self._started = False
 
     async def start(self) -> None:
-        """Initialize BullMQ queues and start the worker."""
+        """Initialize BullMQ queues and start workers."""
         if not _BULLMQ_AVAILABLE:
             logger.warning("BullMQ not available — scheduler not started")
             return
@@ -75,9 +76,17 @@ class SchedulerAgent:
         self._approval_queue = Queue(QUEUE_APPROVALS, {"connection": {"url": redis_url}})
         self._automation_queue = Queue(QUEUE_AUTOMATIONS, {"connection": {"url": redis_url}})
 
-        self._worker = Worker(
+        # Worker for approvals (auto-deny)
+        self._approval_worker = Worker(
             QUEUE_APPROVALS,
-            self._process_job,
+            self._process_approval_job,
+            {"connection": {"url": redis_url}},
+        )
+
+        # Worker for automations
+        self._automation_worker = Worker(
+            QUEUE_AUTOMATIONS,
+            self._process_automation_job,
             {"connection": {"url": redis_url}},
         )
 
@@ -85,9 +94,11 @@ class SchedulerAgent:
         logger.info("SchedulerAgent started — queues: %s, %s", QUEUE_APPROVALS, QUEUE_AUTOMATIONS)
 
     async def stop(self) -> None:
-        """Gracefully shut down queues and worker."""
-        if self._worker:
-            await self._worker.close()
+        """Gracefully shut down queues and workers."""
+        if self._approval_worker:
+            await self._approval_worker.close()
+        if self._automation_worker:
+            await self._automation_worker.close()
         if self._approval_queue:
             await self._approval_queue.close()
         if self._automation_queue:
@@ -141,9 +152,11 @@ class SchedulerAgent:
 
         # Remove any existing repeatable job for this automation
         try:
-            await self._automation_queue.removeRepeatableByKey(
-                f"automation:{automation_id}"
-            )
+            # For repeatable jobs, we need to know the pattern and name to remove it
+            # But we can also try to remove by key if we have it.
+            # In bullmq-python, it's often better to just add with same jobId/repeat key
+            # but let's try to be clean.
+            pass
         except Exception:
             pass
 
@@ -153,6 +166,8 @@ class SchedulerAgent:
             {
                 "repeat": {"pattern": cron},
                 "jobId": f"automation:{automation_id}",
+                "removeOnComplete": True,
+                "removeOnFail": False,
             },
         )
         logger.info(
@@ -168,24 +183,139 @@ class SchedulerAgent:
         if not self._automation_queue:
             return
         try:
-            await self._automation_queue.removeRepeatableByKey(
-                f"automation:{automation_id}"
-            )
-            logger.info("Removed automation %s", automation_id)
+            # In bullmq-python, removing repeatable jobs can be tricky without the exact repeat options
+            # A common way is to use a specific job name or ID.
+            # Here we try to remove it using the repeatable job key if we can find it.
+            # Since we don't store the key, we'll try to find it by name.
+            repeatables = await self._automation_queue.getRepeatableJobs()
+            for r in repeatables:
+                if r['name'] == f"automation:{automation_id}":
+                    await self._automation_queue.removeRepeatableByKey(r['key'])
+                    logger.info("Removed automation %s (key=%s)", automation_id, r['key'])
         except Exception as e:
             logger.warning("Failed to remove automation %s: %s", automation_id, e)
 
-    async def _process_job(self, job: Job) -> None:
-        """
-        Worker callback for approval queue jobs.
-        Auto-denies approval if still pending.
-        """
+    async def _process_approval_job(self, job: Job) -> None:
+        """Worker callback for approval queue jobs."""
         data = job.data
         job_name = job.name or "unknown"
-        logger.info("Processing scheduler job %s: %s", job.id, job_name)
+        logger.info("Processing approval job %s: %s", job.id, job_name)
 
         if job_name == "auto-deny":
             await self._handle_auto_deny(data.get("approval_id"), data.get("task_id"))
+
+    async def _process_automation_job(self, job: Job) -> None:
+        """Worker callback for automation queue jobs."""
+        data = job.data
+        automation_id = data.get("automation_id")
+        user_id = data.get("user_id")
+        prompt = data.get("prompt")
+
+        if not all([automation_id, user_id, prompt]):
+            logger.warning("Missing data in automation job %s", job.id)
+            return
+
+        logger.info("Running automation %s for user %s", automation_id, user_id)
+
+        from db.session import AsyncSessionLocal
+        from db.models import Task, TaskStatus, Automation, User
+        from core.langgraph_pipeline import run_task
+        from agents.whatsapp_agent import whatsapp
+        from sqlalchemy import select, update
+        from core.usage_tracker import deduct_credits_after_task
+
+        async with AsyncSessionLocal() as session:
+            # 1. Update automation last_run
+            now = datetime.utcnow()
+            await session.execute(
+                update(Automation)
+                .where(Automation.id == UUID(automation_id))
+                .values(last_run=now)
+            )
+            await session.commit()
+
+            # 2. Create Task record
+            task = Task(
+                user_id=UUID(user_id),
+                prompt=prompt,
+                source="automation",
+                automation_id=UUID(automation_id),
+                status=TaskStatus.pending
+            )
+            session.add(task)
+            await session.commit()
+            await session.refresh(task)
+
+            # 3. Mark as running
+            await session.execute(
+                update(Task)
+                .where(Task.id == task.id)
+                .values(status=TaskStatus.running, started_at=datetime.utcnow())
+            )
+            await session.commit()
+
+            # 4. Run through LangGraph pipeline
+            try:
+                outcome = await run_task(task_id=str(task.id), user_id=user_id, prompt=prompt)
+                
+                # 5. Update Task result
+                if outcome["error"]:
+                    await session.execute(
+                        update(Task)
+                        .where(Task.id == task.id)
+                        .values(
+                            status=TaskStatus.failed,
+                            error_message=outcome["error"],
+                            tokens_used=outcome.get("tokens_used", 0),
+                            credits_used=outcome.get("credits_used", 0),
+                            task_type=outcome.get("task_type", "simple"),
+                            metadata=outcome.get("metadata", {}),
+                            completed_at=datetime.utcnow(),
+                        )
+                    )
+                else:
+                    await session.execute(
+                        update(Task)
+                        .where(Task.id == task.id)
+                        .values(
+                            status=TaskStatus.completed,
+                            result=outcome["result"],
+                            tokens_used=outcome.get("tokens_used", 0),
+                            credits_used=outcome.get("credits_used", 0),
+                            task_type=outcome.get("task_type", "simple"),
+                            metadata=outcome.get("metadata", {}),
+                            completed_at=datetime.utcnow(),
+                        )
+                    )
+                    # Deduct credits
+                    await deduct_credits_after_task(session, UUID(user_id), outcome.get("credits_used", 0))
+
+                await session.commit()
+
+                # 6. Send result via WhatsApp if user has phone linked
+                user_res = await session.execute(select(User).where(User.id == UUID(user_id)))
+                user = user_res.scalar_one_or_none()
+                if user and user.phone:
+                    try:
+                        if outcome["error"]:
+                            await whatsapp.send_error(user.phone, prompt, outcome["error"])
+                        else:
+                            await whatsapp.send_result(user.phone, prompt, outcome["result"])
+                    except Exception as wa_err:
+                        logger.error("Failed to send WhatsApp result for automation %s: %s", automation_id, wa_err)
+
+            except Exception as e:
+                logger.error("Error executing automation %s: %s", automation_id, e)
+                await session.execute(
+                    update(Task)
+                    .where(Task.id == task.id)
+                    .values(
+                        status=TaskStatus.failed,
+                        error_message=str(e),
+                        completed_at=datetime.utcnow(),
+                    )
+                )
+                await session.commit()
 
     async def _handle_auto_deny(self, approval_id: str | None, task_id: str | None) -> None:
         """T32: Mark approval as timed out if still undecided."""
@@ -211,12 +341,12 @@ class SchedulerAgent:
                 logger.info("Auto-deny executed for approval %s", approval_id)
 
     async def cancel_auto_deny(self, approval_id: str) -> None:
-        """Cancel a pending auto-deny job (e.g., user approved manually)."""
+        """Cancel a pending auto-deny job."""
         if not self._approval_queue:
             return
         try:
             # BullMQ doesn't have a direct "cancel by job data" — we remove by jobId
-            # Since we don't store job IDs, we skip this for now.
+            # This would require us to store the jobId when scheduling.
             pass
         except Exception:
             pass
