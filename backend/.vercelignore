@@ -1,0 +1,31 @@
+# Exclude large binaries that exceed Vercel's 250MB compressed bundle limit.
+# Playwright/Chromium is not available in Vercel serverless — the browser agent
+# falls back to the LLM path automatically.
+
+# Playwright browser binaries
+.playwright/
+ms-playwright/
+playwright-*.tar.gz
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Dev/test artifacts
+tests/
+*.test.py
+.coverage
+htmlcov/
+
+# Local env
+.env
+.env.local

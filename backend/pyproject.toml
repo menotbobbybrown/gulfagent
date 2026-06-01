@@ -1,0 +1,4 @@
+[tool.vercel]
+# Tell Vercel's Python runtime where the FastAPI app instance lives.
+# This resolves to backend/main.py → app = FastAPI(...)
+entrypoint = "main:app"
