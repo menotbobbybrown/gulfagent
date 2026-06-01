@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 
@@ -30,6 +31,9 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 };
 
 export default function TasksPage() {
+  const searchParams = useSearchParams();
+  const automationIdParam = searchParams.get("automation_id");
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -40,7 +44,7 @@ export default function TasksPage() {
 
   useEffect(() => {
     fetchTasks();
-  }, [page, statusFilter]);
+  }, [page, statusFilter, automationIdParam]);
 
   async function fetchTasks() {
     setLoading(true);
@@ -51,6 +55,7 @@ export default function TasksPage() {
 
       const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       if (statusFilter) params.set("status", statusFilter);
+      if (automationIdParam) params.set("automation_id", automationIdParam);
 
       const res = await fetch(`/api/tasks?${params}`, {
         headers: { Authorization: `Bearer ${session.access_token}` },

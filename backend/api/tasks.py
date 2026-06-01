@@ -256,6 +256,7 @@ async def list_tasks(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
     status: str | None = Query(default=None),
+    automation_id: UUID | None = Query(default=None),
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedTasks:
@@ -263,6 +264,8 @@ async def list_tasks(
     query = select(Task).where(Task.user_id == user_id)
     if status:
         query = query.where(Task.status == status)
+    if automation_id:
+        query = query.where(Task.automation_id == automation_id)
     query = query.order_by(desc(Task.created_at)).offset(offset).limit(limit)
 
     result = await db.execute(query)
@@ -273,6 +276,8 @@ async def list_tasks(
     count_q = select(func.count()).select_from(Task).where(Task.user_id == user_id)
     if status:
         count_q = count_q.where(Task.status == status)
+    if automation_id:
+        count_q = count_q.where(Task.automation_id == automation_id)
     total_result = await db.execute(count_q)
     total = total_result.scalar_one()
 
