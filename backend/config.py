@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     task_limit_basic: int = 50
     task_limit_pro: int = 200
 
+    # T77 — Langfuse (optional, observability)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"
+
+    # T78 — Sentry (optional, error tracking)
+    sentry_dsn: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

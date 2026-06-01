@@ -6,12 +6,14 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user_id
+from core.rate_limiter import limiter
+from core.usage_tracker import check_automation_limit
 from db.models import Automation
 from db.session import get_db
 from agents.scheduler_agent import scheduler
@@ -67,11 +69,16 @@ class PaginatedAutomations(BaseModel):
 # ──────────────────────────────────────────────
 
 @router.post("", response_model=SingleAutomation, status_code=201)
+@limiter.limit("10/minute")
 async def create_automation(
     body: AutomationCreate,
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SingleAutomation:
+    # T67 — Check automation limit
+    await check_automation_limit(db, user_id)
+
     automation = Automation(
         user_id=user_id,
         name=body.name,
@@ -96,9 +103,11 @@ async def create_automation(
 
 
 @router.get("", response_model=PaginatedAutomations)
+@limiter.limit("30/minute")
 async def list_automations(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedAutomations:
@@ -129,8 +138,10 @@ async def list_automations(
 
 
 @router.get("/{automation_id}", response_model=SingleAutomation)
+@limiter.limit("30/minute")
 async def get_automation(
     automation_id: UUID,
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SingleAutomation:
@@ -139,7 +150,10 @@ async def get_automation(
     )
     automation = result.scalar_one_or_none()
     if not automation:
-        raise HTTPException(status_code=404, detail="Automation not found")
+        raise HTTPException(status_code=404, detail={
+            "code": "AUTOMATION_NOT_FOUND",
+            "message": "Automation not found.",
+        })
     return SingleAutomation(data=AutomationResponse.model_validate(automation))
 
 
@@ -155,7 +169,10 @@ async def update_automation(
     )
     automation = result.scalar_one_or_none()
     if not automation:
-        raise HTTPException(status_code=404, detail="Automation not found")
+        raise HTTPException(status_code=404, detail={
+            "code": "AUTOMATION_NOT_FOUND",
+            "message": "Automation not found.",
+        })
 
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -190,7 +207,10 @@ async def delete_automation(
     )
     automation = result.scalar_one_or_none()
     if not automation:
-        raise HTTPException(status_code=404, detail="Automation not found")
+        raise HTTPException(status_code=404, detail={
+            "code": "AUTOMATION_NOT_FOUND",
+            "message": "Automation not found.",
+        })
 
     await db.delete(automation)
     await db.commit()

@@ -26,6 +26,7 @@ from core.langgraph_pipeline import run_task
 from core.usage_tracker import check_credits_before_task, deduct_credits_after_task
 from db.models import Approval, Task, TaskStatus, User
 from db.session import get_db, AsyncSessionLocal
+import stripe as stripe_lib
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -307,3 +308,184 @@ async def whatsapp_status() -> dict:
     """Check Evolution API instance connection status."""
     status = await whatsapp.get_instance_status()
     return {"data": status, "error": None}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# T65 — POST /api/webhooks/stripe
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/stripe")
+async def stripe_webhook(request: Request) -> dict:
+    """
+    Handle Stripe webhook events:
+    - checkout.session.completed — activate subscription, update user
+    - invoice.paid — sync subscription status, reset monthly credits
+    - customer.subscription.updated — handle plan changes
+    - customer.subscription.deleted — downgrade to free tier
+    """
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    try:
+        event = stripe_lib.Webhook.construct_event(
+            payload, sig_header, settings.stripe_webhook_secret
+        )
+    except stripe_lib.error.SignatureVerificationError as e:
+        logger.warning("Stripe webhook signature verification failed: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    except Exception as e:
+        logger.warning("Stripe webhook payload parse failed: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    event_type = event.get("type", "")
+    data = event.get("data", {}).get("object", {})
+    logger.info("Stripe webhook: %s", event_type)
+
+    async with AsyncSessionLocal() as db:
+        try:
+            if event_type == "checkout.session.completed":
+                await _handle_checkout_completed(db, data)
+            elif event_type == "invoice.paid":
+                await _handle_invoice_paid(db, data)
+            elif event_type == "customer.subscription.updated":
+                await _handle_subscription_updated(db, data)
+            elif event_type == "customer.subscription.deleted":
+                await _handle_subscription_deleted(db, data)
+            else:
+                logger.info("Unhandled Stripe event: %s", event_type)
+        except Exception as e:
+            logger.error("Error handling Stripe event %s: %s", event_type, e)
+            # Don't return error to Stripe — they'll retry
+
+    return {"data": {"received": True}, "error": None}
+
+
+async def _handle_checkout_completed(db: AsyncSession, data: dict) -> None:
+    """
+    Activate subscription: update user with stripe_customer_id,
+    stripe_subscription_id, subscription_tier, subscription_status.
+    """
+    user_id = data.get("metadata", {}).get("user_id") or data.get("client_reference_id")
+    customer_id = data.get("customer")
+    subscription_id = data.get("subscription")
+    tier = data.get("metadata", {}).get("tier", "basic")
+
+    if not user_id or not customer_id or not subscription_id:
+        logger.warning("checkout.session.completed missing fields: %s", data)
+        return
+
+    await db.execute(
+        update(User)
+        .where(User.id == UUID(user_id))
+        .values(
+            stripe_customer_id=customer_id,
+            stripe_subscription_id=subscription_id,
+            subscription_tier=tier,
+            subscription_status="active",
+        )
+    )
+    await db.commit()
+    logger.info("Subscription activated: user=%s tier=%s sub=%s", user_id, tier, subscription_id)
+
+
+async def _handle_invoice_paid(db: AsyncSession, data: dict) -> None:
+    """
+    Sync subscription status on successful payment, reset monthly credits
+    by updating the usage record.
+    """
+    subscription_id = data.get("subscription")
+    if not subscription_id:
+        return
+
+    # Find user by subscription
+    result = await db.execute(
+        select(User).where(User.stripe_subscription_id == subscription_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        logger.warning("No user found for subscription %s", subscription_id)
+        return
+
+    # Update status
+    await db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(subscription_status="active")
+    )
+    await db.commit()
+    logger.info("Invoice paid — subscription sync: user=%s", user.id)
+
+
+async def _handle_subscription_updated(db: AsyncSession, data: dict) -> None:
+    """
+    Handle plan changes (upgrade/downgrade).
+    Sync tier based on the subscription items.
+    """
+    subscription_id = data.get("id")
+    status = data.get("status", "active")
+    items = data.get("items", {}).get("data", [])
+
+    if not subscription_id:
+        return
+
+    result = await db.execute(
+        select(User).where(User.stripe_subscription_id == subscription_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        logger.warning("No user found for subscription %s", subscription_id)
+        return
+
+    # Detect tier from price metadata
+    tier = user.subscription_tier
+    for item in items:
+        price = item.get("price", {})
+        metadata = price.get("metadata", {})
+        if metadata.get("tier"):
+            tier = metadata["tier"]
+            break
+
+    sub_status = "active"
+    if status in ("past_due", "unpaid"):
+        sub_status = "past_due"
+    elif status == "canceled":
+        sub_status = "cancelled"
+    elif status == "incomplete_expired":
+        sub_status = "cancelled"
+
+    await db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(
+            subscription_tier=tier,
+            subscription_status=sub_status,
+        )
+    )
+    await db.commit()
+    logger.info("Subscription updated: user=%s tier=%s status=%s", user.id, tier, sub_status)
+
+
+async def _handle_subscription_deleted(db: AsyncSession, data: dict) -> None:
+    """Downgrade user to free/basic tier when subscription is deleted."""
+    subscription_id = data.get("id")
+    if not subscription_id:
+        return
+
+    result = await db.execute(
+        select(User).where(User.stripe_subscription_id == subscription_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        return
+
+    await db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(
+            subscription_tier="basic",
+            subscription_status="cancelled",
+            stripe_subscription_id=None,
+        )
+    )
+    await db.commit()
+    logger.info("Subscription deleted — downgraded user=%s to basic", user.id)

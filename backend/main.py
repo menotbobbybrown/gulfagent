@@ -2,6 +2,8 @@
 GulfAgent — FastAPI application entry point.
 T01: /health endpoint
 T02: Supabase connection verified on startup
+T73: Rate limiting with slowapi
+T78: Sentry integration (commented out, opt-in)
 """
 
 import logging
@@ -11,6 +13,20 @@ from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+# ── T78: Sentry (opt-in) ──
+# import sentry_sdk
+# from sentry_sdk.integrations.fastapi import FastApiIntegration
+# import os
+# SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+# if SENTRY_DSN:
+#     sentry_sdk.init(
+#         dsn=SENTRY_DSN,
+#         integrations=[FastApiIntegration()],
+#         traces_sample_rate=0.1,
+#         environment=os.getenv("APP_ENV", "production"),
+#     )
+#     logger.info("Sentry initialized")
 
 from api.tasks import router as tasks_router
 from api.automations import router as automations_router
@@ -22,6 +38,10 @@ from api.approvals import router as approvals_router
 from api.users import router as users_router
 from agents.scheduler_agent import scheduler
 from config import get_settings
+from core.rate_limiter import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,13 +63,12 @@ async def lifespan(app: FastAPI):
     try:
         from supabase import create_client
         client = create_client(settings.supabase_url, settings.supabase_service_key)
-        # Lightweight ping: list users (returns empty if no users, that's fine)
         client.auth.admin.list_users()
         logger.info("✓ Supabase connection OK")
     except Exception as exc:
         logger.warning("Supabase connection check failed (non-fatal in dev): %s", exc)
 
-    # Start BullMQ scheduler (workers for auto-deny, automations, etc.)
+    # Start BullMQ scheduler
     try:
         await scheduler.start()
         logger.info("✓ Scheduler started")
@@ -58,7 +77,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown scheduler
     try:
         await scheduler.stop()
         logger.info("Scheduler stopped")
@@ -80,7 +98,12 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — frontend on localhost:3000 in dev, app URL in prod
+# T73 — Rate limiter state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

@@ -2,6 +2,7 @@
 T08 — LangGraph pipeline (Phase 1 simple LLM)
 T24 — Add browser tool to pipeline
 T25 — LLM-based task type classifier (replaces keyword heuristic)
+T77 — Langfuse observability (commented out, opt-in)
 """
 
 from __future__ import annotations
@@ -16,6 +17,21 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from config import get_settings
+
+# ── T77: Langfuse (opt-in) ──
+# import os
+# LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+# LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY", "")
+# LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+# langfuse_handler = None
+# if LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY:
+#     from langfuse.callback import CallbackHandler
+#     langfuse_handler = CallbackHandler(
+#         public_key=LANGFUSE_PUBLIC_KEY,
+#         secret_key=LANGFUSE_SECRET_KEY,
+#         host=LANGFUSE_HOST,
+#     )
+#     logger.info("Langfuse callback handler initialized")
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -277,7 +293,12 @@ async def run_task(
     }
 
     try:
-        final_state = await pipeline.ainvoke(initial_state)
+        # T77 — Pass Langfuse callback handler if configured
+        callbacks = []
+        # if langfuse_handler:
+        #     callbacks.append(langfuse_handler)
+
+        final_state = await pipeline.ainvoke(initial_state, config={"callbacks": callbacks} if callbacks else None)
         return {
             "result": final_state.get("result", ""),
             "task_type": final_state.get("task_type", "simple"),

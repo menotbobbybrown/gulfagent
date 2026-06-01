@@ -41,7 +41,8 @@ ollama==0.4.4
 # sentry-sdk[fastapi]==x.x
 
 # Rate limiting (Phase 4)
-# slowapi==0.1.9
+slowapi==0.1.9
+slowapi[redis]==0.1.9
 
 # Utilities
 python-multipart==0.0.20
