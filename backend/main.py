@@ -20,6 +20,7 @@ from api.billing import router as billing_router
 from api.usage import router as usage_router
 from api.approvals import router as approvals_router
 from api.users import router as users_router
+from agents.scheduler_agent import scheduler
 from config import get_settings
 
 logging.basicConfig(
@@ -48,7 +49,21 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Supabase connection check failed (non-fatal in dev): %s", exc)
 
+    # Start BullMQ scheduler (workers for auto-deny, automations, etc.)
+    try:
+        await scheduler.start()
+        logger.info("✓ Scheduler started")
+    except Exception as exc:
+        logger.warning("Scheduler start failed (non-fatal): %s", exc)
+
     yield
+
+    # Shutdown scheduler
+    try:
+        await scheduler.stop()
+        logger.info("Scheduler stopped")
+    except Exception:
+        pass
     logger.info("GulfAgent backend shutting down.")
 
 

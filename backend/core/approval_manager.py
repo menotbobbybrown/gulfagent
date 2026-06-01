@@ -1,7 +1,7 @@
 """
 T27 — Approvals table already defined in db/models.py (Phase 1).
 T28 — Before destructive actions: create approval record, pause agent.
-T32 — Auto-deny after 5 min timeout (asyncio background task).
+T32 — Auto-deny after 5 min timeout (BullMQ delayed job for persistence).
 
 Usage in agent code:
     from core.approval_manager import request_approval, ApprovalRequiredError
@@ -82,10 +82,23 @@ async def request_approval(
         task_id, action_type, approval_id, expires_at.isoformat()
     )
 
-    # Schedule auto-deny
-    asyncio.create_task(
-        _auto_deny_after_timeout(approval_id, APPROVAL_TIMEOUT_SECONDS)
-    )
+    # Schedule auto-deny via BullMQ for persistence across restarts
+    try:
+        from agents.scheduler_agent import scheduler
+        await scheduler.schedule_auto_deny(
+            approval_id=approval_id,
+            task_id=task_id,
+            delay_seconds=APPROVAL_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning(
+            "BullMQ auto-deny scheduling failed (%s), falling back to in-process timer",
+            exc,
+        )
+        # Fallback: in-process timer
+        asyncio.create_task(
+            _auto_deny_after_timeout(approval_id, APPROVAL_TIMEOUT_SECONDS)
+        )
 
     # Poll until decision
     deadline = datetime.utcnow() + timedelta(seconds=APPROVAL_TIMEOUT_SECONDS + 10)
@@ -118,7 +131,7 @@ async def request_approval(
 
 
 async def _auto_deny_after_timeout(approval_id: str, timeout_seconds: int) -> None:
-    """T32: Background coroutine — auto-deny approval after timeout."""
+    """T32: Fallback background coroutine — auto-deny approval after timeout."""
     await asyncio.sleep(timeout_seconds)
     from db.session import AsyncSessionLocal
 

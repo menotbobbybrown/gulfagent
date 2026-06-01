@@ -75,6 +75,74 @@ class BrowserAgent:
         self._steps: list[BrowserStep] = []
         self._screenshot_dir = Path(tempfile.mkdtemp(prefix=f"ga_browser_{task_id[:8]}_"))
 
+    async def _check_destructive_action(self, action_str: str, agent_instance: Any = None) -> None:
+        """
+        Check if the action matches a destructive pattern.
+        If so, trigger the approval flow and raise ApprovalRequiredError.
+
+        Called from on_step_end and on_step_start hooks.
+        Must be async since it calls the DB and approval manager.
+        """
+        action_lower = action_str.lower()
+
+        matched_type: str | None = None
+        for pattern, action_type in self.DESTRUCTIVE_ACTIONS.items():
+            if pattern in action_lower:
+                matched_type = action_type
+                break
+
+        if not matched_type:
+            return
+
+        # Build a safe summary of what the agent is about to do
+        payload = {
+            "action": action_lower[:500],
+            "matched_pattern": matched_type,
+            "task_id": self.task_id,
+            "step_count": len(self._steps) + 1,
+        }
+
+        # Record the destructive action in the task metadata and trigger approval
+        from core.approval_manager import request_approval
+        from db.session import AsyncSessionLocal
+        from sqlalchemy import update
+        from db.models import Task
+        from uuid import UUID
+
+        async with AsyncSessionLocal() as session:
+            # Append destructive_action info to existing metadata (don't overwrite)
+            from sqlalchemy import select
+            existing = await session.execute(
+                select(Task.metadata).where(Task.id == UUID(self.task_id))
+            )
+            current_meta = existing.scalar_one_or_none() or {}
+
+            updated_meta = dict(current_meta) if isinstance(current_meta, dict) else {}
+            updated_meta["destructive_action"] = {
+                "pattern": matched_type,
+                "action": action_lower[:500],
+            }
+
+            await session.execute(
+                update(Task)
+                .where(Task.id == UUID(self.task_id))
+                .values(metadata=updated_meta)
+            )
+            await session.commit()
+
+            logger.warning(
+                "Destructive action detected: pattern=%s action=%s task=%s",
+                matched_type, action_lower[:100], self.task_id,
+            )
+
+            # This will raise ApprovalRequiredError (blocks until decided)
+            await request_approval(
+                session=session,
+                task_id=self.task_id,
+                action_type=matched_type,
+                payload=payload,
+            )
+
     async def run(self, prompt: str) -> BrowserResult:
         """
         Execute a browser task.
@@ -103,11 +171,21 @@ class BrowserAgent:
             step_counter = {"n": 0}
 
             async def on_step_start(agent_instance: Any) -> None:
-                """Hook: capture screenshot at start of each step."""
-                pass  # browser-use fires this before actions
+                """Hook: before each step — check for destructive planned actions."""
+                # Check if the next planned action contains destructive patterns
+                try:
+                    if hasattr(agent_instance, "state") and hasattr(agent_instance.state, "next_plan"):
+                        next_plan = agent_instance.state.next_plan
+                        if next_plan:
+                            plan_str = str(next_plan).lower()
+                            await self._check_destructive_action(plan_str, agent_instance)
+                except ApprovalRequiredError:
+                    raise
+                except Exception as e:
+                    logger.debug("on_step_start check error: %s", e)
 
             async def on_step_end(agent_instance: Any) -> None:
-                """Hook: capture screenshot + record step after each action."""
+                """Hook: capture screenshot + record step + check for destructive actions."""
                 step_counter["n"] += 1
                 n = step_counter["n"]
 
@@ -123,6 +201,9 @@ class BrowserAgent:
                             last_action = str(last_entry.model_actions[0])
                         if last_entry.state and last_entry.state.url:
                             last_url = last_entry.state.url
+
+                    # Check if the action just executed is destructive
+                    await self._check_destructive_action(last_action, agent_instance)
 
                     screenshot_path = None
                     try:
@@ -141,6 +222,8 @@ class BrowserAgent:
                         url=last_url,
                         screenshot_path=screenshot_path,
                     ))
+                except ApprovalRequiredError:
+                    raise
                 except Exception as step_err:
                     logger.debug("Step hook error at %d: %s", n, step_err)
 
