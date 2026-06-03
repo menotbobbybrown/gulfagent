@@ -59,6 +59,10 @@ class TaskResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    model_used: str | None = None
+    cost_usd: float = 0
+    latency_ms: int = 0
+    fallback_used: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -147,6 +151,10 @@ async def _execute_task_bg(task_id: str, user_id: str, prompt: str, retry_count:
                     task_type=outcome["task_type"],
                     metadata=meta,
                     completed_at=datetime.utcnow(),
+                    model_used=outcome.get("metadata", {}).get("model"),
+                    cost_usd=outcome.get("metadata", {}).get("cost_usd", 0),
+                    latency_ms=outcome.get("metadata", {}).get("latency_ms", 0),
+                    fallback_used=outcome.get("metadata", {}).get("fallback_used", False),
                 )
             )
         else:
@@ -161,6 +169,10 @@ async def _execute_task_bg(task_id: str, user_id: str, prompt: str, retry_count:
                     task_type=outcome["task_type"],
                     metadata={**outcome.get("metadata", {}), **metadata_updates},
                     completed_at=datetime.utcnow(),
+                    model_used=outcome.get("metadata", {}).get("model"),
+                    cost_usd=outcome.get("metadata", {}).get("cost_usd", 0),
+                    latency_ms=outcome.get("metadata", {}).get("latency_ms", 0),
+                    fallback_used=outcome.get("metadata", {}).get("fallback_used", False),
                 )
             )
             # Deduct credits after success

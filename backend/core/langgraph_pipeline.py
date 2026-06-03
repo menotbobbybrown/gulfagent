@@ -2,7 +2,7 @@
 T08 — LangGraph pipeline (Phase 1 simple LLM)
 T24 — Add browser tool to pipeline
 T25 — LLM-based task type classifier (replaces keyword heuristic)
-T77 — Langfuse observability (commented out, opt-in)
+Migrated to OpenRouter orchestrator.
 """
 
 from __future__ import annotations
@@ -11,27 +11,15 @@ import logging
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-import anthropic
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
+from sqlalchemy import select
 
 from config import get_settings
-
-# ── T77: Langfuse (opt-in) ──
-# import os
-# LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY", "")
-# LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY", "")
-# LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
-# langfuse_handler = None
-# if LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY:
-#     from langfuse.callback import CallbackHandler
-#     langfuse_handler = CallbackHandler(
-#         public_key=LANGFUSE_PUBLIC_KEY,
-#         secret_key=LANGFUSE_SECRET_KEY,
-#         host=LANGFUSE_HOST,
-#     )
-#     logger.info("Langfuse callback handler initialized")
+from core.model_orchestrator import orchestrator
+from db.models import User
+from db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -44,8 +32,9 @@ settings = get_settings()
 class AgentState(TypedDict):
     task_id: str
     user_id: str
+    user_tier: str
     prompt: str
-    task_type: Literal["simple", "browser", "whatsapp", "automation"]
+    task_type: str
     messages: Annotated[list, add_messages]
     result: str
     tokens_used: int
@@ -58,44 +47,15 @@ class AgentState(TypedDict):
 # T25 — LLM-based classifier
 # ──────────────────────────────────────────────
 
-_CLASSIFY_PROMPT = """\
-You are a task router for an AI agent platform. Classify the user task below.
-
-Respond with EXACTLY one word — either "browser" or "simple":
-
-- "browser": requires loading websites, form interaction, web scraping, \
-price monitoring, taking screenshots, logging into services, or any task \
-that explicitly involves navigating the web.
-- "simple": everything else — research from knowledge, text drafting, \
-analysis, calculation, summarisation, code writing, Q&A.
-
-User task: {prompt}
-
-Classification:"""
-
-
 async def classify_task(state: AgentState) -> AgentState:
     """
-    T25: Use Claude to classify whether the task needs a browser.
-    Fast single-token response (max_tokens=5).
-    Falls back to keyword heuristic if API call fails.
-    T83: Also detect Arabic language early.
+    Use Orchestrator to classify the task.
     """
-    from agents.arabic_router import detect_arabic
     prompt = state["prompt"]
-    
     metadata = state.get("metadata", {})
-    if settings.language_detection_enabled:
-        is_arabic = detect_arabic(prompt)
-        metadata["language"] = "ar" if is_arabic else "en"
+    language = metadata.get("language", "en")
 
-    # Fast keyword pre-screen to avoid LLM call for obvious cases
-    simple_keywords = ["draft", "write", "summarise", "summarize", "explain",
-                       "calculate", "translate", "list", "compare", "analyse", "analyze"]
-    browser_keywords = ["browse", "website", "url", "http", "scrape", "monitor price",
-                        "fill form", "log in", "login",
-                        "navigate to", "open the", "go to the", "find on", "search on"]
-    
+    # Connector pre-screen
     connector_map = {
         "careem": "connector_careem",
         "noon": "connector_noon",
@@ -109,56 +69,49 @@ async def classify_task(state: AgentState) -> AgentState:
         if kw in pl:
             return {**state, "task_type": task_type, "metadata": metadata}
 
-    if any(kw in pl for kw in browser_keywords):
-        return {**state, "task_type": "browser", "metadata": metadata}
-    if any(kw in pl for kw in simple_keywords):
-        return {**state, "task_type": "simple", "metadata": metadata}
-
-
-
-    # LLM classification
     try:
-        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        resp = await client.messages.create(
-            model="claude-haiku-4-5-20251001",   # cheapest/fastest for classification
-            max_tokens=5,
-            messages=[{
-                "role": "user",
-                "content": _CLASSIFY_PROMPT.format(prompt=prompt[:500]),
-            }],
-        )
-        answer = resp.content[0].text.strip().lower() if resp.content else "simple"
-        task_type: Literal["simple", "browser"] = "browser" if "browser" in answer else "simple"
+        task_type = await orchestrator.classify(prompt, language)
     except Exception as e:
-        logger.warning("Classifier LLM call failed (%s), defaulting to simple", e)
-        task_type = "simple"
+        logger.warning("Classifier LLM call failed (%s), defaulting to simple_qa", e)
+        task_type = "simple_qa"
 
     return {**state, "task_type": task_type, "metadata": metadata}
 
 
-
 # ──────────────────────────────────────────────
-# Simple LLM node (routes through Arabic detector)
+# Simple LLM node
 # ──────────────────────────────────────────────
 
 async def execute_simple_llm(state: AgentState) -> AgentState:
-    """Route to Claude or Qwen3 based on language detection."""
-    from agents.arabic_router import route_to_llm
-
+    """Route to OpenRouter orchestrator."""
     try:
-        result_text, tokens, model_used = await route_to_llm(state["prompt"])
+        res = await orchestrator.run(
+            task_type=state["task_type"],
+            prompt=state["prompt"],
+            user_tier=state.get("user_tier", "basic"),
+            task_id=state["task_id"]
+        )
+        
+        if res["error"]:
+            return {**state, "result": "", "error": res["error"]}
+
+        tokens = res["input_tokens"] + res["output_tokens"]
         credits = max(1, tokens // 100)
+        
         return {
             **state,
-            "result": result_text,
+            "result": res["result"],
             "tokens_used": tokens,
             "credits_used": credits,
             "error": None,
-            "metadata": {**state.get("metadata", {}), "model": model_used},
+            "metadata": {
+                **state.get("metadata", {}), 
+                "model": res["model_used"],
+                "cost_usd": res["cost_usd"],
+                "latency_ms": res["latency_ms"],
+                "fallback_used": res["fallback_used"]
+            },
         }
-    except anthropic.APIError as e:
-        logger.error("Anthropic API error: %s", e)
-        return {**state, "result": "", "error": str(e)}
     except Exception as e:
         logger.exception("Simple LLM node failed for task %s", state["task_id"])
         return {**state, "result": "", "error": str(e)}
@@ -179,6 +132,7 @@ async def execute_browser(state: AgentState) -> AgentState:
     agent = BrowserAgent(
         task_id=state["task_id"],
         user_id=state["user_id"],
+        user_tier=state.get("user_tier", "basic"),
         headless=True,
         timeout_seconds=300,
     )
@@ -258,11 +212,11 @@ async def execute_connector(state: AgentState) -> AgentState:
     prompt = state["prompt"]
     task_id = state["task_id"]
     user_id = state["user_id"]
+    user_tier = state.get("user_tier", "basic")
     
     connector_classes = {
         "connector_careem": CareemConnector,
         "connector_noon": NoonConnector,
-        "talabat": TalabatConnector, # wait, classifier uses connector_talabat
         "connector_talabat": TalabatConnector,
         "connector_dubai_now": DubaiNowConnector,
     }
@@ -280,16 +234,23 @@ async def execute_connector(state: AgentState) -> AgentState:
             
         data = res.get("data", {})
         # Format the structured data into a human-readable response using LLM
-        from agents.arabic_router import route_to_llm
         format_prompt = f"Format the following structured data into a helpful response for the user:\n\n{data}\n\nUser original request: {prompt}"
-        formatted_text, tokens, model_used = await route_to_llm(format_prompt)
+        
+        format_res = await orchestrator.run("connector_format", format_prompt, user_tier=user_tier)
+        
+        tokens = format_res["input_tokens"] + format_res["output_tokens"]
         
         return {
             **state,
-            "result": formatted_text,
+            "result": format_res["result"],
             "tokens_used": tokens,
             "credits_used": 50, # Connectors have a base cost
-            "metadata": {**state.get("metadata", {}), "connector_data": data, "model": model_used}
+            "metadata": {
+                **state.get("metadata", {}), 
+                "connector_data": data, 
+                "model": format_res["model_used"],
+                "cost_usd": format_res["cost_usd"]
+            }
         }
     except Exception as e:
         logger.exception("Connector %s failed", task_type)
@@ -301,11 +262,12 @@ async def execute_connector(state: AgentState) -> AgentState:
 # ──────────────────────────────────────────────
 
 def route_by_type(state: AgentState) -> Literal["execute_simple", "execute_browser", "execute_connector"]:
-    tt = state.get("task_type", "simple")
+    tt = state.get("task_type", "simple_qa")
     if tt.startswith("connector_"):
         return "execute_connector"
-    return "execute_browser" if tt == "browser" else "execute_simple"
-
+    if tt == "browser_task":
+        return "execute_browser"
+    return "execute_simple"
 
 
 # ──────────────────────────────────────────────
@@ -355,29 +317,38 @@ async def run_task(
     Execute a task through the LangGraph pipeline.
     Returns dict with: result, task_type, tokens_used, credits_used, error, metadata
     """
+    # Fetch user tier
+    user_tier = "basic"
+    language = "en"
+    try:
+        async with AsyncSessionLocal() as db:
+            user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+            user = await db.get(User, user_uuid)
+            if user:
+                user_tier = user.subscription_tier or "basic"
+                language = user.preferred_language or "en"
+    except Exception as e:
+        logger.warning("Failed to fetch user tier for %s: %s", user_id, e)
+
     initial_state: AgentState = {
         "task_id": task_id,
         "user_id": user_id,
+        "user_tier": user_tier,
         "prompt": prompt,
-        "task_type": "simple",
+        "task_type": "simple_qa",
         "messages": [],
         "result": "",
         "tokens_used": 0,
         "credits_used": 0,
         "error": None,
-        "metadata": {},
+        "metadata": {"language": language},
     }
 
     try:
-        # T77 — Pass Langfuse callback handler if configured
-        callbacks = []
-        # if langfuse_handler:
-        #     callbacks.append(langfuse_handler)
-
-        final_state = await pipeline.ainvoke(initial_state, config={"callbacks": callbacks} if callbacks else None)
+        final_state = await pipeline.ainvoke(initial_state)
         return {
             "result": final_state.get("result", ""),
-            "task_type": final_state.get("task_type", "simple"),
+            "task_type": final_state.get("task_type", "simple_qa"),
             "tokens_used": final_state.get("tokens_used", 0),
             "credits_used": final_state.get("credits_used", 1),
             "error": final_state.get("error"),
@@ -387,7 +358,7 @@ async def run_task(
         logger.exception("Pipeline failed for task %s", task_id)
         return {
             "result": "",
-            "task_type": "simple",
+            "task_type": "simple_qa",
             "tokens_used": 0,
             "credits_used": 1,
             "error": str(exc),

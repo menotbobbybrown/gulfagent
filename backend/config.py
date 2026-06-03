@@ -5,8 +5,11 @@ from functools import lru_cache
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Anthropic
-    anthropic_api_key: str = ""
+    # OpenRouter
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_site_url: str = "https://gulfagent.com"
+    openrouter_app_name: str = "GulfAgent"
 
     # Supabase
     supabase_url: str = ""           # postgres connection string (asyncpg)
@@ -27,10 +30,6 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_basic: str = ""
     stripe_price_pro: str = ""
-
-    # Ollama (Arabic fallback)
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen3:8b"
 
     # App
     next_public_supabase_url: str = ""
