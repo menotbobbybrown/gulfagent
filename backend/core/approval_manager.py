@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 APPROVAL_TIMEOUT_SECONDS = 300  # 5 minutes
 POLL_INTERVAL_SECONDS = 2
 
+DESTRUCTIVE_CODE_PATTERNS = [
+    "os.system", "subprocess.", "shutil.rmtree",
+    "open.*write", "requests.post", "smtplib",
+    "socket.", "webbrowser.", "ctypes."
+]
+
 
 class ApprovalRequiredError(Exception):
     """
@@ -199,3 +205,12 @@ async def decide_approval(
     await session.refresh(approval)
     logger.info("Approval decided: %s → %s", approval_id, decision)
     return approval
+
+
+async def check_code_for_destructive_patterns(code: str, task_id: str, session: AsyncSession) -> str | None:
+    """Check if generated code contains destructive patterns. Returns approval_id if approval needed."""
+    for pattern in DESTRUCTIVE_CODE_PATTERNS:
+        if pattern in code:
+            approval_id = await request_approval(session, task_id, "code_execution", {"pattern": pattern, "code_snippet": code[:500]})
+            return approval_id
+    return None

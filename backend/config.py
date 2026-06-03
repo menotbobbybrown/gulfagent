@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # E2B Code Sandbox
+    e2b_api_key: str = ""
+
     # T78 — Sentry (optional, error tracking)
     sentry_dsn: str = ""
 

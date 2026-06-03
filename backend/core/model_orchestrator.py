@@ -44,6 +44,13 @@ MODEL_ROUTES = {
         "cost_per_1k_in": 0.0009,
         "cost_per_1k_out": 0.0036,
     },
+    "code_execution": {
+        "primary": "moonshotai/kimi-k2.6",
+        "secondary": "google/gemini-flash-1.5",
+        "emergency": "google/gemini-flash-1.5",
+        "cost_per_1k_in": 0.0009,
+        "cost_per_1k_out": 0.0036,
+    },
     "research_task": {
         "primary": "google/gemini-pro-1.5",
         "secondary": "google/gemini-flash-1.5",
@@ -182,7 +189,7 @@ class ModelOrchestrator:
     async def classify(self, prompt: str, language: str = "en") -> str:
         system_prompt = (
             "Classify the following user prompt into one of these types: "
-            "simple_qa, browser_task, arabic_task, code_task, research_task, creative_task, sensitive_task. "
+            "simple_qa, browser_task, arabic_task, code_task, code_execution, research_task, creative_task, sensitive_task. "
             "Return ONLY the type name."
         )
         
@@ -190,7 +197,7 @@ class ModelOrchestrator:
         classification = res["result"].strip().lower()
         
         valid_types = [
-            "simple_qa", "browser_task", "arabic_task", "code_task", 
+            "simple_qa", "browser_task", "arabic_task", "code_task", "code_execution",
             "research_task", "creative_task", "sensitive_task"
         ]
         

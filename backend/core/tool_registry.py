@@ -28,12 +28,20 @@ def dubai_now_government_services(query: str):
     """Check fines and government services via DubaiNow."""
     return "Use the specialized DubaiNow connector for this task."
 
+
+@tool
+def execute_code_tool(code: str, language: str = "python"):
+    """Execute Python code in a secure E2B sandbox. Safe for running user-provided code."""
+    return "Use the SandboxExecutor for this task."
+
+
 # Populated in Phase 2+
 REGISTERED_TOOLS: list[BaseTool] = [
     careem_ride_estimate,
     noon_product_search,
     talabat_food_delivery,
     dubai_now_government_services,
+    execute_code_tool,
 ]
 
 

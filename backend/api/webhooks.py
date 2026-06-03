@@ -18,7 +18,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.arabic_router import detect_arabic
+import re
+_ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
+def _detect_arabic(text: str) -> bool:
+    if not text.strip(): return False
+    clean = text.replace(" ", "").replace("\n", "")
+    if not clean: return False
+    arabic_chars = len(_ARABIC_RE.findall(clean))
+    return (arabic_chars / len(clean)) >= 0.15
 from agents.whatsapp_agent import whatsapp
 from config import get_settings
 from core.approval_manager import decide_approval
@@ -188,6 +195,12 @@ async def _handle_message(
         return  # Ignore messages we sent
 
     message = data.get("message", {})
+    
+    # Check for media files
+    if message.get("documentMessage") or message.get("imageMessage"):
+        await _handle_media_message(data, background_tasks, db)
+        return
+
     text = (
         message.get("conversation")
         or message.get("extendedTextMessage", {}).get("text")
@@ -247,7 +260,7 @@ async def _handle_message(
         return
 
     # T38 — Detect Arabic for acknowledgement language
-    is_arabic = detect_arabic(text)
+    is_arabic = _detect_arabic(text)
     ack = "⏳ جاري تنفيذ المهمة…" if is_arabic else "⏳ On it! Running your task…"
     await whatsapp.send_text(phone, ack)
 
@@ -297,6 +310,56 @@ async def _handle_approval_reply(
         await whatsapp.send_text(phone, msg)
     except HTTPException as e:
         await whatsapp.send_text(phone, f"Could not process: {e.detail}")
+
+
+async def _handle_media_message(data: dict, background_tasks: BackgroundTasks, db: AsyncSession) -> None:
+    """Handle media files (CSV, Excel, PDF, images) sent via WhatsApp."""
+    message = data.get("message", {})
+    doc = message.get("documentMessage") or message.get("imageMessage") or {}
+    media_url = doc.get("url", "")
+    file_name = doc.get("fileName", "file")
+    mime_type = doc.get("mimeType", "")
+
+    key = data.get("key", {})
+    remote_jid = key.get("remoteJid", "")
+    phone = _normalize_phone(remote_jid.split("@")[0])
+    user = await _get_or_create_user_by_phone(db, phone)
+    if not user:
+        # GCC welcome message
+        is_gcc = phone.startswith(("971", "966", "974", "965", "973", "968"))
+        if is_gcc:
+            welcome = (
+                "مرحباً بك في GulfAgent! 👋\n\n"
+                "أنا مساعدك الذكي لأتمتة المهام في منطقة الخليج. "
+                "للبدء، يرجى التسجيل عبر الرابط التالي وربط رقم هاتفك في الإعدادات:\n"
+                f"{settings.next_public_app_url}/login"
+            )
+        else:
+            welcome = (
+                "👋 Welcome to GulfAgent! To get started, please sign up at our dashboard "
+                "and link your WhatsApp number in Settings:\n"
+                f"{settings.next_public_app_url}/login"
+            )
+        await whatsapp.send_text(phone, welcome)
+        return
+
+    await whatsapp.send_text(phone, f"📎 Received {file_name}. Analyzing...")
+
+    try:
+        from core.sandbox_executor import sandbox
+        if "csv" in mime_type or "spreadsheet" in mime_type or "excel" in mime_type:
+            prompt = f"Analyze the uploaded file {file_name}. Summarize key columns, statistics, and insights."
+            result = await sandbox.execute_data_analysis({"name": file_name, "data": media_url}, prompt)
+            await whatsapp.send_text(phone, result.get("stdout", "Analysis complete"))
+        elif "pdf" in mime_type:
+            prompt = f"Extract and summarize the text from {file_name}"
+            result = await sandbox.execute_data_analysis({"name": file_name, "data": media_url}, prompt)
+            await whatsapp.send_text(phone, result.get("stdout", "Summary complete"))
+        else:
+            await whatsapp.send_text(phone, f"File type {mime_type} not yet supported for analysis.")
+    except Exception as e:
+        logger.exception("Media handling failed")
+        await whatsapp.send_text(phone, f"Could not process file: {str(e)}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
