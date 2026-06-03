@@ -92,6 +92,36 @@ class SchedulerAgent:
 
         self._started = True
         logger.info("SchedulerAgent started — queues: %s, %s", QUEUE_APPROVALS, QUEUE_AUTOMATIONS)
+        
+        # B5 — Restore active automations on startup
+        try:
+            await self.restore_automations()
+        except Exception as e:
+            logger.error("Failed to restore automations: %s", e)
+
+    async def restore_automations(self) -> None:
+        """Query DB for active automations and re-register them with BullMQ."""
+        from db.session import AsyncSessionLocal
+        from db.models import Automation
+        from sqlalchemy import select
+
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Automation).where(Automation.active == True)
+            )
+            active_automations = result.scalars().all()
+            
+            count = 0
+            for auto in active_automations:
+                await self.schedule_automation(
+                    automation_id=str(auto.id),
+                    user_id=str(auto.user_id),
+                    prompt=auto.prompt,
+                    cron=auto.cron
+                )
+                count += 1
+            
+            logger.info("Restored %d active automations from database", count)
 
     async def stop(self) -> None:
         """Gracefully shut down queues and workers."""

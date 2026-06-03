@@ -76,6 +76,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Scheduler start failed (non-fatal): %s", exc)
 
+    # M1 — Auto-register WhatsApp webhook
+    try:
+        if settings.evolution_api_url and settings.evolution_api_key:
+            from agents.whatsapp_agent import whatsapp
+            app_url = settings.next_public_app_url.rstrip("/")
+            webhook_url = f"{app_url}/api/webhooks/whatsapp"
+            await whatsapp.register_webhook(webhook_url)
+            logger.info("✓ WhatsApp webhook registered")
+    except Exception as exc:
+        logger.warning("WhatsApp webhook registration failed (non-fatal): %s", exc)
+
     yield
 
     try:

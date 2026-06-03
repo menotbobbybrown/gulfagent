@@ -29,8 +29,7 @@ actually reliable.
 | Storage | Supabase Storage |
 | Payments | Stripe (AED currency) |
 | Infra | Docker + Dokploy on Hetzner VPS |
-| LLM | Claude claude-sonnet-4-20250514 via Anthropic API |
-| Arabic LLM | Qwen3-8B via Ollama (offline fallback) |
+| LLM Gateway | OpenRouter (single gateway — all models via unified API) |
 
 ---
 
@@ -64,7 +63,11 @@ gulfagent/
 │   ├── core/
 │   │   ├── langgraph_pipeline.py  # Main agent graph
 │   │   ├── tool_registry.py       # All agent tools
-│   │   └── usage_tracker.py       # Credits/token tracking
+│   │   ├── usage_tracker.py       # Credits/token tracking
+│   │   └── model_orchestrator.py  # OpenRouter model routing
+│   │
+│   ├── connectors/              # External service connectors
+│   ├── payments/                # Stripe integration logic
 │   │
 │   └── db/
 │       ├── models.py            # SQLAlchemy models
@@ -152,8 +155,9 @@ approvals       -- Pending approval requests (task_id, expires_at, decision)
 ## Environment Variables
 
 ```bash
-# Anthropic
-ANTHROPIC_API_KEY=
+# OpenRouter (Single LLM Gateway)
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
 # Supabase
 SUPABASE_URL=
@@ -173,10 +177,6 @@ STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 STRIPE_PRICE_BASIC=
 STRIPE_PRICE_PRO=
-
-# Ollama (Arabic fallback)
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen3:8b
 
 # App
 NEXT_PUBLIC_SUPABASE_URL=
