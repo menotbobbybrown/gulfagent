@@ -18,17 +18,17 @@ client = OpenAI(
 MODEL_ROUTES = {
     "simple_qa": {
         "primary": "google/gemini-flash-1.5",
-        "secondary": "mistralai/mistral-7b-instruct",
+        "secondary": "google/gemini-flash-1.5",
         "emergency": "google/gemini-flash-1.5",
         "cost_per_1k_in": 0.000075,
         "cost_per_1k_out": 0.0003,
     },
     "browser_task": {
-        "primary": "anthropic/claude-sonnet-4-5",
+        "primary": "moonshotai/kimi-k2.6",
         "secondary": "google/gemini-flash-1.5",
         "emergency": "google/gemini-flash-1.5",
-        "cost_per_1k_in": 0.01,
-        "cost_per_1k_out": 0.04,
+        "cost_per_1k_in": 0.0009,
+        "cost_per_1k_out": 0.0036,
     },
     "arabic_task": {
         "primary": "mistralai/mistral-large",
@@ -38,7 +38,7 @@ MODEL_ROUTES = {
         "cost_per_1k_out": 0.008,
     },
     "code_task": {
-        "primary": "qwen/qwen-2.5-coder-32b",
+        "primary": "moonshotai/kimi-k2.6",
         "secondary": "google/gemini-flash-1.5",
         "emergency": "google/gemini-flash-1.5",
         "cost_per_1k_in": 0.0009,
@@ -46,7 +46,7 @@ MODEL_ROUTES = {
     },
     "research_task": {
         "primary": "google/gemini-pro-1.5",
-        "secondary": "anthropic/claude-3-haiku",
+        "secondary": "google/gemini-flash-1.5",
         "emergency": "google/gemini-flash-1.5",
         "cost_per_1k_in": 0.0025,
         "cost_per_1k_out": 0.0075,
@@ -59,18 +59,18 @@ MODEL_ROUTES = {
         "cost_per_1k_out": 0.002,
     },
     "sensitive_task": {
-        "primary": "anthropic/claude-sonnet-4-5",
-        "secondary": "anthropic/claude-3-haiku",
-        "emergency": "google/gemini-flash-1.5",
-        "cost_per_1k_in": 0.01,
-        "cost_per_1k_out": 0.04,
-    },
-    "classifier": {
-        "primary": "google/gemini-flash-1.5",
+        "primary": "mistralai/mistral-large",
         "secondary": "google/gemini-flash-1.5",
         "emergency": "google/gemini-flash-1.5",
-        "cost_per_1k_in": 0.000075,
-        "cost_per_1k_out": 0.0003,
+        "cost_per_1k_in": 0.002,
+        "cost_per_1k_out": 0.008,
+    },
+    "classifier": {
+        "primary": "moonshotai/kimi-k2.6:free",
+        "secondary": "google/gemini-flash-1.5",
+        "emergency": "google/gemini-flash-1.5",
+        "cost_per_1k_in": 0.0,
+        "cost_per_1k_out": 0.0,
     },
     "connector_format": {
         "primary": "google/gemini-flash-1.5",
