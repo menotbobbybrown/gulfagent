@@ -29,7 +29,7 @@ actually reliable.
 | Storage | Supabase Storage |
 | Payments | Stripe (AED currency) |
 | Infra | Docker + Dokploy on Hetzner VPS |
-| LLM Gateway | OpenRouter (single gateway — all models via unified API) |
+| LLM Gateway | OpenRouter — unified API for 8+ models |
 
 ---
 
@@ -61,13 +61,22 @@ gulfagent/
 │   │   └── billing.py           # Stripe webhooks + usage
 │   │
 │   ├── core/
-│   │   ├── langgraph_pipeline.py  # Main agent graph
-│   │   ├── tool_registry.py       # All agent tools
-│   │   ├── usage_tracker.py       # Credits/token tracking
-│   │   └── model_orchestrator.py  # OpenRouter model routing
-│   │
-│   ├── connectors/              # External service connectors
-│   ├── payments/                # Stripe integration logic
+    │   │   ├── langgraph_pipeline.py   # Main agent graph
+    │   │   ├── model_orchestrator.py   # OpenRouter model routing
+    │   │   ├── tool_registry.py        # All agent tools
+    │   │   ├── usage_tracker.py        # Credits/token tracking
+    │   │   ├── approval_manager.py     # Approval CRUD + timeout
+    │   │   └── rate_limiter.py         # slowapi rate limits
+    │   │
+    │   ├── connectors/              # GCC service connectors
+    │   │   ├── careem.py            # Careem ride booking
+    │   │   ├── noon.py              # Noon product search
+    │   │   ├── talabat.py           # Talabat food ordering
+    │   │   └── dubai_now.py         # DubaiNow government services
+    │   │
+    │   ├── payments/                # GCC payment gateways
+    │   │   ├── hyperpay.py          # HyperPay AED processing
+    │   │   └── tabby.py             # Tabby/Tamara BNPL
 │   │
 │   └── db/
 │       ├── models.py            # SQLAlchemy models
@@ -155,33 +164,57 @@ approvals       -- Pending approval requests (task_id, expires_at, decision)
 ## Environment Variables
 
 ```bash
-# OpenRouter (Single LLM Gateway)
-OPENROUTER_API_KEY=
+# ── OpenRouter (Single LLM Gateway) ──────────────────────────
+OPENROUTER_API_KEY=sk-or-...
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_SITE_URL=https://gulfagent.com
+OPENROUTER_APP_NAME=GulfAgent
 
-# Supabase
-SUPABASE_URL=
-SUPABASE_SERVICE_KEY=
-SUPABASE_ANON_KEY=
+# ── Supabase ─────────────────────────────────────────────────
+SUPABASE_URL=postgresql+asyncpg://postgres:[password]@db.[ref].supabase.co:5432/postgres
+SUPABASE_URL_HTTP=https://[ref].supabase.co
+SUPABASE_SERVICE_KEY=eyJ...
+SUPABASE_ANON_KEY=eyJ...
 
-# Evolution API (WhatsApp)
-EVOLUTION_API_URL=
-EVOLUTION_API_KEY=
-WHATSAPP_INSTANCE=
+# ── Supabase (Next.js public vars) ───────────────────────────
+NEXT_PUBLIC_SUPABASE_URL=https://[ref].supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 
-# Redis
+# ── Evolution API (WhatsApp) ─────────────────────────────────
+EVOLUTION_API_URL=http://localhost:8080
+EVOLUTION_API_KEY=your-evolution-api-key
+WHATSAPP_INSTANCE=gulfagent
+
+# ── Redis (BullMQ) ───────────────────────────────────────────
 REDIS_URL=redis://localhost:6379
 
-# Stripe
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-STRIPE_PRICE_BASIC=
-STRIPE_PRICE_PRO=
+# ── Stripe ───────────────────────────────────────────────────
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_BASIC=price_...    # AED 150/mo
+STRIPE_PRICE_PRO=price_...      # AED 500/mo
 
-# App
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-NEXT_PUBLIC_APP_URL=
+# ── HyperPay (GCC Payment Gateway) ───────────────────────────
+HYPERPAY_ENTITY_ID=...
+HYPERPAY_ACCESS_TOKEN=...
+HYPERPAY_BASE_URL=https://test.oppwa.com
+
+# ── BNPL (Tabby/Tamara) ──────────────────────────────────────
+TABBY_API_KEY=...
+TABBY_BASE_URL=https://api.tabby.ai
+TAMARA_API_KEY=...
+TAMARA_BASE_URL=https://api.tamara.co
+
+# ── App ──────────────────────────────────────────────────────
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:8000
+LANGUAGE_DETECTION_ENABLED=true
+
+# ── Observability (optional) ─────────────────────────────────
+# LANGFUSE_PUBLIC_KEY=pk-...
+# LANGFUSE_SECRET_KEY=sk-...
+# LANGFUSE_HOST=https://cloud.langfuse.com
+# SENTRY_DSN=https://...@...ingest.sentry.io/...
 ```
 
 ---
