@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8] — E2B Sandbox + Multi-Agent System
+**Date:** June 2025
+
+### Added
+- **E2B Code Sandbox** — `sandbox_executor.py` with `execute_code()`, `execute_with_files()`, `execute_data_analysis()` — all in isolated E2B sandbox with 30s timeout
+- **Multi-Agent Delegation** — `agent_manager.py` with ManagerAgent delegating to BrowserAgent, CodeAgent (E2B), and multi-step ResearchAgent
+- **code_execution task type** — routed to `moonshotai/kimi-k2.6` via OpenRouter
+- **WhatsApp File Processing** — CSV, Excel, PDF, image files sent via WhatsApp are downloaded and analyzed in E2B sandbox
+- **5 new skills**: Data Analyst, Excel Automator, PDF Summarizer, Custom Script Runner, Market Data Puller
+- **Destructive Code Security** — `DESTRUCTIVE_CODE_PATTERNS` in `approval_manager.py` blocks `os.system`, `subprocess`, `shutil.rmtree`, etc. via WhatsApp approval
+- **E2B_API_KEY** env var in config.py + .env.example
+- `e2b-code-interpreter` dependency in requirements.txt
+- `execute_code_tool` in tool_registry.py
+
+### Changed
+- `langgraph_pipeline.py` — ManagerAgent routing replaces per-node execution
+- `model_orchestrator.py` — added `code_execution` route to MODEL_ROUTES
+- `webhooks.py` — fixed `arabic_router` import (deleted), added media message handler
+- `seed_skills.py` — 5 new skills (now 15 total)
+
+### Files
+```
+NEW:    backend/core/sandbox_executor.py
+NEW:    backend/core/agent_manager.py
+UPD:    backend/core/langgraph_pipeline.py
+UPD:    backend/core/model_orchestrator.py
+UPD:    backend/core/tool_registry.py
+UPD:    backend/core/approval_manager.py
+UPD:    backend/api/webhooks.py
+UPD:    backend/db/seed_skills.py
+UPD:    backend/config.py
+UPD:    backend/requirements.txt
+UPD:    .env.example
+```
+
+---
+
 ## [0.7] — Pre-deployment Fixes (Current)
 
 **Date:** June 2025
