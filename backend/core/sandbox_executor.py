@@ -5,12 +5,13 @@ All user-provided code runs in isolated E2B sandbox — never on host.
 import asyncio, base64, logging, os
 from typing import Any
 from e2b_code_interpreter import Sandbox
+from config import get_settings
 
 logger = logging.getLogger(__name__)
 
 class SandboxExecutor:
     def __init__(self):
-        self.api_key = os.getenv("E2B_API_KEY", "")
+        self.api_key = get_settings().e2b_api_key
     
     async def execute_code(self, code: str, language: str = "python") -> dict:
         """Execute code in isolated E2B sandbox. Timeout 30s."""
