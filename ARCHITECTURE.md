@@ -67,13 +67,17 @@
 1. **User sends prompt** via WhatsApp text, dashboard TaskInput, API call, or automation trigger
 2. **FastAPI** receives the request, validates JWT/Supabase auth, checks rate limits (slowapi), creates a `Task` record in Supabase with `status: pending`
 3. **BackgroundTasks** (FastAPI) asynchronously triggers the LangGraph pipeline via `_execute_task_bg()` in `tasks.py`
-4. **classify_task** node calls `orchestrator.classify(prompt, language)` which uses the classifier model to determine task type
-5. **route_by_type** conditional edge maps the task type to the correct execution node
-6. **Execution node runs**: either `execute_simple_llm` (direct OpenRouter call), `execute_browser` (browser-use agent with screenshot capture), or `execute_connector` (GCC-specific connector with post-processing)
-7. **OpenRouter returns** structured response with result, tokens, cost, latency
-8. **Task record updated** in Supabase with result, metadata, cost tracking fields
-9. **Credits deducted** AFTER successful completion via `deduct_credits_after_task()`
-10. **User notified** via WhatsApp (Evolution API) or SSE event (dashboard live feed)
+4. **AgentManager** classifies the prompt and determines the delegation path.
+5. **Delegation node runs**:
+   - `execute_simple_llm`: Direct OpenRouter call for general queries.
+   - `execute_browser`: **BrowserAgent** (browser-use) for web navigation.
+   - `execute_code`: **CodeAgent** (E2B Sandbox) for data analysis and script execution.
+   - `execute_research`: **ResearchAgent** for multi-step information synthesis.
+   - `execute_connector`: GCC-specific connectors.
+6. **OpenRouter returns** structured response with result, tokens, cost, latency
+7. **Task record updated** in Supabase with result, metadata, cost tracking fields
+8. **Credits deducted** AFTER successful completion via `deduct_credits_after_task()`
+9. **User notified** via WhatsApp (Evolution API) or SSE event (dashboard live feed)
 
 ---
 
@@ -281,6 +285,33 @@ Two BullMQ queues manage asynchronous operations, backed by Redis.
 
 ---
 
+## 5b. E2B Code Sandbox
+
+- **SandboxExecutor**: provides `execute_code()`, `execute_with_files()`, and `execute_data_analysis()` methods using the E2B SDK.
+- **Isolation**: Every execution runs in a fresh, isolated E2B sandbox that is auto-destroyed after completion.
+- **Limits**: 30-second execution timeout to prevent runaway scripts.
+- **File Handling**: Files (CSV, Excel, PDF, images) are uploaded to the sandbox before execution; generated results (e.g., charts) are returned as base64.
+- **Routing**: `code_execution` tasks are routed to `moonshotai/kimi-k2.6` via the orchestrator for script generation.
+- **WhatsApp Integration**: Chart images generated in the sandbox are returned as base64 for direct delivery via WhatsApp.
+
+---
+
+## 5c. Multi-Agent Manager
+
+- **ManagerAgent**: The entry point for the LangGraph pipeline. It receives every task, classifies it, and delegates to specialized agents.
+- **Delegation Logic**:
+  - `simple_qa` → Direct LLM response via orchestrator.
+  - `browser_task` → **BrowserAgent** using `browser-use`.
+  - `code_execution` → **CodeAgent** using E2B Sandbox.
+  - `research_task` → **ResearchAgent** (multi-step flow).
+  - `connector_*` → GCC-specific connectors.
+- **ResearchAgent Flow**: Executes a 3-step process:
+  1. Decompose the research question into sub-queries.
+  2. Execute 2-3 browser queries to gather information.
+  3. Synthesize the findings into a final report.
+
+---
+
 ## 6. Approval Flow
 
 ```
@@ -380,6 +411,14 @@ User submits task ──→ Agent detects destructive action
 ---
 
 ## 8. Security
+
+### Destructive Code Detection
+
+For `code_execution` tasks, the system scans generated code for `DESTRUCTIVE_CODE_PATTERNS` before execution. Patterns include:
+- System commands: `os.system`, `subprocess.run`, `shutil.rmtree`
+- File system modifications outside the sandbox's temporary directory.
+- Network requests to internal infrastructure.
+- If detected, the task is routed through the **Approval Flow**, requiring explicit user confirmation via WhatsApp before proceeding.
 
 ### Supabase Row-Level Security (RLS)
 

@@ -28,6 +28,7 @@ actually reliable.
 | Auth | Supabase Auth (magic link) |
 | Storage | Supabase Storage |
 | Payments | Stripe (AED currency) |
+| Code Execution | E2B Sandbox (isolated, auto-destroy) |
 | Infra | Docker + Dokploy on Hetzner VPS |
 | LLM Gateway | OpenRouter — unified API for 8+ models |
 
@@ -61,9 +62,11 @@ gulfagent/
 │   │   └── billing.py           # Stripe webhooks + usage
 │   │
 │   ├── core/
-    │   │   ├── langgraph_pipeline.py   # Main agent graph
-    │   │   ├── model_orchestrator.py   # OpenRouter model routing
-    │   │   ├── tool_registry.py        # All agent tools
+│   │   ├── langgraph_pipeline.py   # Main agent graph
+│   │   ├── model_orchestrator.py   # OpenRouter model routing
+│   │   ├── sandbox_executor.py     # E2B code sandbox
+│   │   ├── agent_manager.py        # Multi-agent delegation
+│   │   ├── tool_registry.py        # All agent tools
     │   │   ├── usage_tracker.py        # Credits/token tracking
     │   │   ├── approval_manager.py     # Approval CRUD + timeout
     │   │   └── rate_limiter.py         # slowapi rate limits
@@ -111,35 +114,42 @@ gulfagent/
 
 ### 1. Task Runner
 - User submits task via dashboard or WhatsApp
-- Agent classifies task type (browser, search, data, communication)
-- LangGraph executes with appropriate tools
+- ManagerAgent classifies and delegates to specialized agents
+- Specialized agents: BrowserAgent (web), CodeAgent (E2B), ResearchAgent (multi-step)
 - Result returned via dashboard + WhatsApp
 
-### 2. Approval Flow
+### 2. Multi-Agent Delegation
+- ManagerAgent receives every task and routes based on type
+- **CodeAgent**: Handles `code_execution` using E2B sandbox for isolated Python runtimes
+- **BrowserAgent**: Handles `browser_task` using browser-use for web navigation
+- **ResearchAgent**: Multi-step flow for deep-dive information gathering and synthesis
+- **SimpleQA**: Direct LLM response for general queries
+
+### 3. Approval Flow
 - Before any destructive action (send email, make payment, post content)
 - Push notification + WhatsApp message: "Approve? Y/N"
 - 5 min timeout → auto-deny
 - One-tap approve from WhatsApp
 
-### 3. Browser Agent
+### 4. Browser Agent
 - browser-use for web navigation
 - Can: fill forms, extract data, monitor prices, submit applications
 - Screenshots stored in Supabase Storage
 - Replay available in dashboard
 
-### 4. Automations (Scheduled Tasks)
+### 5. Automations (Scheduled Tasks)
 - User creates recurring task with cron schedule
 - BullMQ runs at scheduled time
 - Results delivered via WhatsApp
 - Pause/resume/delete from dashboard
 
-### 5. Skills Marketplace
+### 6. Skills Marketplace
 - Pre-built task templates
 - Categories: Research, E-commerce, Government, Finance, HR
 - One-click activate
 - GCC-specific: DubaiNow, Absher, Noon, Talabat connectors
 
-### 6. WhatsApp Interface
+### 7. WhatsApp Interface
 - Evolution API self-hosted
 - User texts task → agent executes → result texted back
 - Approval flow fully WhatsApp-native
@@ -147,11 +157,25 @@ gulfagent/
 
 ---
 
+## Model Routing (OpenRouter)
+
+| Task Type | Primary Model |
+|---|---|
+| `simple_qa` | `google/gemini-flash-1.5` |
+| `browser_task` | `moonshotai/kimi-k2.6` |
+| `code_execution` | `moonshotai/kimi-k2.6` |
+| `research_task` | `google/gemini-pro-1.5` |
+| `arabic_task` | `mistralai/mistral-large` |
+| `creative_task` | `meta-llama/llama-3.3-70b` |
+| `classifier` | `moonshotai/kimi-k2.6:free` |
+
+---
+
 ## Database Schema (Key Tables)
 
 ```sql
 users           -- Supabase auth users + profile
-tasks           -- All task executions (id, user_id, prompt, status, result, tokens_used)
+tasks           -- All task executions (id, user_id, prompt, status, result, tokens_used, model_used, cost_usd, latency_ms, fallback_used)
 automations     -- Scheduled tasks (cron, prompt, last_run, next_run, active)
 skills          -- Skill templates (name, category, prompt_template, icon)
 user_skills     -- Activated skills per user
@@ -187,6 +211,9 @@ WHATSAPP_INSTANCE=gulfagent
 
 # ── Redis (BullMQ) ───────────────────────────────────────────
 REDIS_URL=redis://localhost:6379
+
+# ── E2B Code Sandbox ─────────────────────────────────────────
+E2B_API_KEY=sk-e2b-...
 
 # ── Stripe ───────────────────────────────────────────────────
 STRIPE_SECRET_KEY=sk_test_...

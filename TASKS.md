@@ -143,6 +143,21 @@ Mark tasks ✅ when complete.
 
 ---
 
+## PHASE 7 — E2B Sandbox + Multi-Agent System
+> Goal: Secure code execution, intelligent task delegation, WhatsApp file processing.
+
+- [x] P1 — E2B SandboxExecutor with execute_code, execute_with_files, execute_data_analysis
+- [x] P2 — AgentManager with BrowserAgent, CodeAgent, ResearchAgent delegation
+- [x] P3 — code_execution task type in model_orchestrator (→ kimi-k2.6)
+- [x] P4 — WhatsApp media message handling (CSV, Excel, PDF, images)
+- [x] P5 — 5 new skills: Data Analyst, Excel Automator, PDF Summarizer, Script Runner, Market Data
+- [x] P6 — Destructive code pattern detection + approval flow
+- [x] P7 — E2B_API_KEY env var + e2b-code-interpreter dependency
+- [x] P8 — execute_code_tool in tool_registry
+- [x] P9 — Docs updated for new features
+
+---
+
 ## Notes for CTO
 
 - Start with T01-T09 backend, then T10-T18 frontend in parallel

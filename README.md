@@ -28,7 +28,7 @@ Built by **ModelNorth Ventures** — target market: UAE SMEs, Saudi enterprise, 
 
 ## Features
 
-### 10 Seed Skills
+### 15 Seed Skills
 | Skill | Description |
 |---|---|
 | 📰 **Daily Gulf News Briefing** | Scrape Gulf News + Zawya, deliver WhatsApp summary |
@@ -41,8 +41,16 @@ Built by **ModelNorth Ventures** — target market: UAE SMEs, Saudi enterprise, 
 | 📈 **Mag 7 Stock Brief** | Daily pre-market prices via WhatsApp |
 | 📋 **Tender Monitor** | Scan government portals for new tenders |
 | 🗂️ **WhatsApp Report** | Compile week's task results into PDF, send |
+| 🧪 **Data Analyst** | Upload CSV via WhatsApp → get analysis + chart |
+| 📊 **Excel Automator** | Describe Excel needs → get .xlsx back |
+| 📄 **PDF Summarizer** | Send PDF → structured summary |
+| ⚡ **Custom Script Runner** | Describe automation → script runs in sandbox |
+| 📈 **Market Data Puller** | Company name → financials + charts |
 
 ### Core Platform
+- **E2B Code Sandbox** — Secure code execution in isolated E2B sandbox. Write, run, and get results without any risk to host.
+- **Multi-Agent System** — OpenHands-style ManagerAgent delegates to specialized agents: BrowserAgent (web), CodeAgent (E2B sandbox), ResearchAgent (multi-step)
+- **WhatsApp File Processing** — Send CSV, Excel, PDF, or images via WhatsApp. Gets automated analysis and charts back.
 - **WhatsApp Interface** — Submit tasks, get results, approve actions — all via WhatsApp
 - **Browser Agent** — browser-use powered web navigation with screenshot capture and replay
 - **Automations** — Recurring tasks with cron scheduling via BullMQ
@@ -63,6 +71,11 @@ Built by **ModelNorth Ventures** — target market: UAE SMEs, Saudi enterprise, 
 │  Dashboard  │     │  (LangGraph) │     │  (8 models) │
 └─────────────┘     └──────┬───────┘     └─────────────┘
                            │
+                    ┌──────▼───────┐     ┌─────────────┐
+                    │  AgentManager│────▶│  E2B Sandbox│
+                    │  (delegates) │     │  (isolated)  │
+                    └──────┬───────┘     └─────────────┘
+                           │
                     ┌──────▼───────┐
                     │   Supabase   │
                     │  (Postgres)  │
@@ -73,11 +86,13 @@ Built by **ModelNorth Ventures** — target market: UAE SMEs, Saudi enterprise, 
 1. **User sends prompt** via WhatsApp text message or dashboard TaskInput
 2. **FastAPI creates Task record** in Supabase with `status: pending`
 3. **BackgroundTasks triggers LangGraph pipeline**
-4. **classify_task** uses Orchestrator's `classify()` to determine task type
-5. **route_by_type** selects execution path: simple LLM, browser, or connector
-6. **Execution node runs** against OpenRouter with appropriate model
-7. **Task record updated** with result, tokens, cost, metadata
-8. **WhatsApp notification** or **SSE event** sent to user
+4. **AgentManager** classifies and delegates:
+   - simple_qa → direct LLM via orchestrator
+   - browser_task → BrowserAgent (browser-use)
+   - code_execution → CodeAgent (E2B sandbox)
+   - research_task → multi-step ResearchAgent
+5. **Task record updated** with result, tokens, cost, metadata
+6. **WhatsApp notification** or **SSE event** sent to user
 
 ---
 
@@ -141,8 +156,10 @@ open http://localhost:3000
 | 25 | `TABBY_BASE_URL` | Tabby API base URL | ❌ |
 | 26 | `TAMARA_API_KEY` | Tamara API key | ❌ |
 | 27 | `TAMARA_BASE_URL` | Tamara API base URL | ❌ |
+| **E2B Sandbox** | | | |
+| 28 | `E2B_API_KEY` | E2B API key for code sandbox | ✅ |
 | **Other** | | | |
-| 28 | `LANGUAGE_DETECTION_ENABLED` | `true` to enable Arabic detection | ❌ |
+| 29 | `LANGUAGE_DETECTION_ENABLED` | `true` to enable Arabic detection | ❌ |
 
 ---
 
