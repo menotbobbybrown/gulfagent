@@ -32,6 +32,9 @@ bullmq==2.5.0
 # Stripe
 stripe==11.3.0
 
+# E2B Code Sandbox
+e2b-code-interpreter==1.0.3
+
 # Arabic / OpenRouter
 httpx==0.28.1
 
