@@ -81,6 +81,15 @@ MODEL_ROUTES = {
     },
 }
 
+MODEL_COST_MAP = {
+    "google/gemini-flash-1.5": {"cost_per_1k_in": 0.000075, "cost_per_1k_out": 0.0003},
+    "moonshotai/kimi-k2.6": {"cost_per_1k_in": 0.0009, "cost_per_1k_out": 0.0036},
+    "moonshotai/kimi-k2.6:free": {"cost_per_1k_in": 0.0, "cost_per_1k_out": 0.0},
+    "mistralai/mistral-large": {"cost_per_1k_in": 0.002, "cost_per_1k_out": 0.008},
+    "google/gemini-pro-1.5": {"cost_per_1k_in": 0.0025, "cost_per_1k_out": 0.0075},
+    "meta-llama/llama-3.3-70b": {"cost_per_1k_in": 0.0006, "cost_per_1k_out": 0.002},
+}
+
 class ModelOrchestrator:
     def __init__(self):
         self.usage_log = []
@@ -136,11 +145,9 @@ class ModelOrchestrator:
                 output_tokens = response.usage.completion_tokens
                 
                 # Calculate cost
-                # Note: This is an approximation based on the route's cost, 
-                # might be slightly off if fallback to a model with different cost.
-                # For accuracy, we'd need a model -> cost map.
-                in_cost = (input_tokens / 1000) * route["cost_per_1k_in"]
-                out_cost = (output_tokens / 1000) * route["cost_per_1k_out"]
+                model_costs = MODEL_COST_MAP.get(model, {"cost_per_1k_in": 0.000075, "cost_per_1k_out": 0.0003})
+                in_cost = (input_tokens / 1000) * model_costs["cost_per_1k_in"]
+                out_cost = (output_tokens / 1000) * model_costs["cost_per_1k_out"]
                 cost_usd = in_cost + out_cost
                 
                 result = {
