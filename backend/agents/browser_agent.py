@@ -65,11 +65,13 @@ class BrowserAgent:
         self,
         task_id: str,
         user_id: str,
+        user_tier: str = "basic",
         headless: bool = True,
         timeout_seconds: int = 300,
     ) -> None:
         self.task_id = task_id
         self.user_id = user_id
+        self.user_tier = user_tier
         self.headless = headless
         self.timeout_seconds = timeout_seconds
         self._steps: list[BrowserStep] = []
@@ -151,15 +153,26 @@ class BrowserAgent:
         """
         try:
             from browser_use import Agent, Browser, BrowserConfig
-            from langchain_anthropic import ChatAnthropic
+            from langchain_openai import ChatOpenAI
+            from core.model_orchestrator import MODEL_ROUTES
 
             from config import get_settings
             settings = get_settings()
 
-            llm = ChatAnthropic(
-                model="claude-sonnet-4-20250514",
-                api_key=settings.anthropic_api_key,
+            route = MODEL_ROUTES.get("browser_task")
+            model_name = route["primary"]
+            if self.user_tier == "basic":
+                model_name = route["secondary"] # gemini-flash
+
+            llm = ChatOpenAI(
+                model=model_name,
+                openai_api_key=settings.openrouter_api_key,
+                openai_api_base=settings.openrouter_base_url,
                 temperature=0,
+                default_headers={
+                    "HTTP-Referer": settings.openrouter_site_url,
+                    "X-Title": settings.openrouter_app_name,
+                },
             )
 
             browser_config = BrowserConfig(

@@ -15,10 +15,10 @@ alembic==1.14.0
 supabase==2.10.0
 
 # AI / Agent
-anthropic==0.40.0
 langgraph==0.2.60
 langchain-core==0.3.25
-langchain-anthropic==0.3.3
+openai>=1.0.0
+langchain-openai
 
 # Browser Agent
 # Install Playwright separately in Dockerfile: playwright install chromium
@@ -32,9 +32,8 @@ bullmq==2.5.0
 # Stripe
 stripe==11.3.0
 
-# Arabic / Ollama
+# Arabic / OpenRouter
 httpx==0.28.1
-ollama==0.4.4
 
 # Observability (Phase 4)
 # langfuse==2.x

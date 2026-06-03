@@ -82,6 +82,11 @@ class Task(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
+    model_used = Column(Text, nullable=True)
+    cost_usd = Column(Numeric(12, 6), default=0)
+    latency_ms = Column(Integer, default=0)
+    fallback_used = Column(Boolean, default=False)
+
     user = relationship("User", back_populates="tasks")
     approval = relationship("Approval", back_populates="task", uselist=False)
 
