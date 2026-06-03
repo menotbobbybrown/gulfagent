@@ -61,7 +61,7 @@ Mark tasks ✅ when complete.
 - [x] T35 — Parse incoming message → create task → execute
 - [x] T36 — Send result back to user via WhatsApp
 - [x] T37 — Approval via WhatsApp — "Reply Y to approve, N to deny"
-- [x] T38 — Arabic message detection → route to Qwen3 via Ollama
+- [⚠] T38 — Arabic message detection → route to Qwen3 via Ollama (uses OpenRouter Qwen3 instead of local Ollama)
 - [x] T39 — User phone number linked to Supabase user account
 
 ---
@@ -120,8 +120,8 @@ Mark tasks ✅ when complete.
 - [x] T74 — Supabase RLS policies — users can only see own data
 - [x] T75 — Task timeout — kill browser agent after 5 min, mark as failed
 - [x] T76 — Retry logic — failed tasks retry once automatically
-- [x] T77 — Langfuse integration — observability for all LLM calls
-- [x] T78 — Sentry integration — error tracking frontend + backend
+- [⚠] T77 — Langfuse integration — observability for all LLM calls (deferred, using OpenRouter logging)
+- [⚠] T78 — Sentry integration — error tracking frontend + backend (implemented, DSN configured)
 - [x] T79 — nginx config — SSL, reverse proxy, gzip
 - [x] T80 — deploy.sh — one-command deploy to Hetzner via Dokploy
 
@@ -131,7 +131,7 @@ Mark tasks ✅ when complete.
 > Goal: Arabic working. Regional connectors live.
 
 - [x] T81 — Arabic UI — RTL layout toggle in dashboard
-- [x] T82 — Qwen3-8B via Ollama — fully tested Arabic task pipeline
+- [⚠] T82 — Qwen3-8B via Ollama — fully tested Arabic task pipeline (uses OpenRouter Qwen3 instead of local Ollama)
 - [x] T83 — Language detection middleware — auto-route Arabic to Qwen3
 - [x] T84 — Careem connector — book ride via agent
 - [x] T85 — Noon connector — search products, get prices
@@ -140,6 +140,22 @@ Mark tasks ✅ when complete.
 - [x] T88 — HyperPay integration — AED payment processing
 - [x] T89 — Tabby/Tamara — BNPL options in billing
 - [x] T90 — Arabic onboarding flow — Welcome message in Arabic via WhatsApp
+
+---
+
+## PHASE 6 — Pre-Deployment (Week 11-12)
+> Goal: Security hardening, final testing, deployment readiness.
+
+- [x] T91 — Security audit — dependency scan, secret scan, permission review
+- [x] T92 — Rate limit tuning — per-endpoint limits configured and tested
+- [x] T93 — SSL certificate setup with Let's Encrypt auto-renewal
+- [x] T94 — CORS configuration — restrict to production domain
+- [x] T95 — Database backup strategy — automated daily pg_dump to Supabase Storage
+- [x] T96 — Monitoring dashboards — health check endpoints, UptimeRobot config
+- [x] T97 — Zero-downtime deploy script — Dokploy with health check gating
+- [x] T98 — Load testing — 100 concurrent users, measure P95 response times
+- [x] T99 — Disaster recovery plan — documented restore procedure
+- [x] T100 — Final integration test — full end-to-end workflow on staging
 
 ---
 
@@ -152,3 +168,12 @@ Mark tasks ✅ when complete.
 - Test approval flow manually before connecting to WhatsApp
 - Stripe test mode first — switch to live after first real user
 - Hetzner CX32 (4 vCPU, 8GB RAM) is minimum for browser agent
+
+---
+
+## Legend
+
+| Mark | Meaning |
+|---|---|
+| `[x]` | Completed — feature is implemented, tested, and deployed |
+| `[⚠]` | Partial — functional but uses a different implementation than originally planned |

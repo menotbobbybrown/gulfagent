@@ -27,9 +27,26 @@ actually reliable.
 | Database | Supabase (PostgreSQL) |
 | Auth | Supabase Auth (magic link) |
 | Storage | Supabase Storage |
-| Payments | Stripe (AED currency) |
+| Payments | Stripe + HyperPay + Tabby/Tamara (AED currency) |
 | Infra | Docker + Dokploy on Hetzner VPS |
-| LLM Gateway | OpenRouter — unified API for 8+ models |
+| LLM Gateway | OpenRouter (unified API for 8+ models) |
+
+---
+
+### Model Routing
+
+| Task Type | Primary Model | Secondary Model | Emergency Fallback |
+|---|---|---|---|
+| Simple chat / query | Claude Sonnet 4 | GPT-4o | Gemini 2.5 Pro |
+| Complex reasoning / code | Claude Opus 4 | GPT-4.1 | Gemini 2.5 Pro |
+| Browser automation | Claude Sonnet 4 | GPT-4o | Gemini 2.5 Flash |
+| Arabic / bilingual | Qwen3-8B | Claude Sonnet 4 | GPT-4o-mini |
+| Tool calling / structured output | Claude Sonnet 4 | GPT-4o-mini | Gemini 2.5 Flash |
+| Summarization | Claude Haiku 3.5 | GPT-4o-mini | Gemini 2.5 Flash |
+| Classification / routing | GPT-4o-mini | Claude Haiku 3.5 | Qwen3-8B |
+| Financial / compliance | Claude Sonnet 4 | GPT-4o | Gemini 2.5 Pro |
+
+All models accessed through OpenRouter's unified API. Routing logic in `core/model_orchestrator.py`.
 
 ---
 
@@ -58,7 +75,10 @@ gulfagent/
 │   │   ├── automations.py       # CRUD for scheduled tasks
 │   │   ├── skills.py            # Skills marketplace routes
 │   │   ├── webhooks.py          # WhatsApp webhook receiver
-│   │   └── billing.py           # Stripe webhooks + usage
+│   │   ├── billing.py           # Stripe webhooks + usage
+│   │   ├── admin.py             # Admin dashboard routes
+│   │   ├── usage.py             # Usage stats API
+│   │   └── deps.py              # Shared FastAPI dependencies
 │   │
 │   ├── core/
     │   │   ├── langgraph_pipeline.py   # Main agent graph
@@ -111,7 +131,7 @@ gulfagent/
 
 ### 1. Task Runner
 - User submits task via dashboard or WhatsApp
-- Agent classifies task type (browser, search, data, communication)
+- Agent classifies task type (browser, search, data, communication) via OpenRouter-based classification
 - LangGraph executes with appropriate tools
 - Result returned via dashboard + WhatsApp
 
