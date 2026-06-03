@@ -32,7 +32,14 @@ class ManagerAgent:
         return {
             **state, "result": res["result"],
             "tokens_used": tokens, "credits_used": max(1, tokens // 100),
-            "metadata": {**state.get("metadata", {}), "model": res["model_used"], "agent": "direct"}
+            "metadata": {
+                **state.get("metadata", {}), 
+                "model": res["model_used"], 
+                "agent": "direct",
+                "cost_usd": res["cost_usd"],
+                "latency_ms": res["latency_ms"],
+                "fallback_used": res["fallback_used"]
+            }
         }
     
     async def _run_browser_task(self, state: dict) -> dict:
@@ -47,7 +54,19 @@ class ManagerAgent:
             else:
                 # Fallback to LLM
                 res = await orchestrator.run("simple_qa", state["prompt"], user_tier=state.get("user_tier","basic"))
-                return {**state, "result": res.get("result",""), "error": result.error, "metadata": {**state.get("metadata",{}), "browser_fallback": True}}
+                return {
+                    **state, 
+                    "result": res.get("result",""), 
+                    "error": result.error, 
+                    "metadata": {
+                        **state.get("metadata",{}), 
+                        "browser_fallback": True,
+                        "model": res.get("model_used"),
+                        "cost_usd": res.get("cost_usd"),
+                        "latency_ms": res.get("latency_ms"),
+                        "fallback_used": res.get("fallback_used")
+                    }
+                }
         finally:
             agent.cleanup()
     
@@ -78,7 +97,16 @@ class ManagerAgent:
                 **state,
                 "result": output,
                 "error": exec_res.get("stderr") or None,
-                "metadata": {**state.get("metadata", {}), "code_executed": True, "chart": chart_data, "files": exec_res.get("files", [])}
+                "metadata": {
+                    **state.get("metadata", {}), 
+                    "code_executed": True, 
+                    "chart": chart_data, 
+                    "files": exec_res.get("files", []),
+                    "model": code_res.get("model_used"),
+                    "cost_usd": code_res.get("cost_usd"),
+                    "latency_ms": code_res.get("latency_ms"),
+                    "fallback_used": code_res.get("fallback_used")
+                }
             }
         except Exception as e:
             return {**state, "error": str(e)}
@@ -115,10 +143,23 @@ class ManagerAgent:
         syn_res = await orchestrator.run("research_task", syn_prompt, user_tier=user_tier)
         if syn_res.get("error"):
             return {**state, "error": syn_res["error"]}
+        
+        total_cost = decomp_res.get("cost_usd", 0) + syn_res.get("cost_usd", 0)
+        total_latency = decomp_res.get("latency_ms", 0) + syn_res.get("latency_ms", 0)
+        
         return {
             **state, "result": syn_res["result"],
             "tokens_used": syn_res.get("input_tokens", 0) + syn_res.get("output_tokens", 0),
-            "metadata": {**state.get("metadata", {}), "queries": queries, "sub_results": results, "model": syn_res.get("model_used", "")}
+            "metadata": {
+                **state.get("metadata", {}), 
+                "queries": queries, 
+                "sub_results": results, 
+                "model": syn_res.get("model_used", ""),
+                "cost_usd": total_cost,
+                "latency_ms": total_latency,
+                "fallback_used": decomp_res.get("fallback_used") or syn_res.get("fallback_used"),
+                "decomp_model": decomp_res.get("model_used")
+            }
         }
 
 manager = ManagerAgent()

@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     next_public_supabase_url: str = ""
     next_public_supabase_anon_key: str = ""
     next_public_app_url: str = "http://localhost:3000"
+    backend_url: str = ""
     language_detection_enabled: bool = True
 
     # Payments - HyperPay

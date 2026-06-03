@@ -80,8 +80,8 @@ async def lifespan(app: FastAPI):
     try:
         if settings.evolution_api_url and settings.evolution_api_key:
             from agents.whatsapp_agent import whatsapp
-            app_url = settings.next_public_app_url.rstrip("/")
-            webhook_url = f"{app_url}/api/webhooks/whatsapp"
+            base_url = (settings.backend_url or settings.next_public_app_url).rstrip("/")
+            webhook_url = f"{base_url}/api/webhooks/whatsapp"
             await whatsapp.register_webhook(webhook_url)
             logger.info("✓ WhatsApp webhook registered")
     except Exception as exc:

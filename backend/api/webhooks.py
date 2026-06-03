@@ -10,6 +10,8 @@ T39 — User phone number linked to Supabase user account
 from __future__ import annotations
 
 import logging
+import httpx
+import base64
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -197,7 +199,7 @@ async def _handle_message(
     message = data.get("message", {})
     
     # Check for media files
-    if message.get("documentMessage") or message.get("imageMessage"):
+    if message.get("documentMessage") or message.get("imageMessage") or message.get("audioMessage"):
         await _handle_media_message(data, background_tasks, db)
         return
 
@@ -312,13 +314,34 @@ async def _handle_approval_reply(
         await whatsapp.send_text(phone, f"Could not process: {e.detail}")
 
 
+async def _download_media(url: str) -> bytes:
+    """Download media from Evolution API using the API key."""
+    async with httpx.AsyncClient() as client:
+        headers = {}
+        if settings.evolution_api_key:
+            headers["apikey"] = settings.evolution_api_key
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        return resp.content
+
+
 async def _handle_media_message(data: dict, background_tasks: BackgroundTasks, db: AsyncSession) -> None:
-    """Handle media files (CSV, Excel, PDF, images) sent via WhatsApp."""
+    """Handle media files (CSV, Excel, PDF, images, audio) sent via WhatsApp."""
     message = data.get("message", {})
-    doc = message.get("documentMessage") or message.get("imageMessage") or {}
+    doc = message.get("documentMessage") or message.get("imageMessage") or message.get("audioMessage") or {}
     media_url = doc.get("url", "")
-    file_name = doc.get("fileName", "file")
+    file_name = doc.get("fileName") or doc.get("caption") or "file"
     mime_type = doc.get("mimeType", "")
+    
+    # If file_name is just "file", try to give it a better name based on mime
+    if file_name == "file":
+        ext = "bin"
+        if "csv" in mime_type: ext = "csv"
+        elif "excel" in mime_type or "spreadsheet" in mime_type: ext = "xlsx"
+        elif "pdf" in mime_type: ext = "pdf"
+        elif "image" in mime_type: ext = "jpg"
+        elif "audio" in mime_type: ext = "ogg"
+        file_name = f"upload.{ext}"
 
     key = data.get("key", {})
     remote_jid = key.get("remoteJid", "")
@@ -346,15 +369,23 @@ async def _handle_media_message(data: dict, background_tasks: BackgroundTasks, d
     await whatsapp.send_text(phone, f"📎 Received {file_name}. Analyzing...")
 
     try:
+        media_bytes = await _download_media(media_url)
+        file_data = {
+            "name": file_name,
+            "data": base64.b64encode(media_bytes).decode()
+        }
+        
         from core.sandbox_executor import sandbox
         if "csv" in mime_type or "spreadsheet" in mime_type or "excel" in mime_type:
             prompt = f"Analyze the uploaded file {file_name}. Summarize key columns, statistics, and insights."
-            result = await sandbox.execute_data_analysis({"name": file_name, "data": media_url}, prompt)
+            result = await sandbox.execute_data_analysis(file_data, prompt)
             await whatsapp.send_text(phone, result.get("stdout", "Analysis complete"))
         elif "pdf" in mime_type:
             prompt = f"Extract and summarize the text from {file_name}"
-            result = await sandbox.execute_data_analysis({"name": file_name, "data": media_url}, prompt)
+            result = await sandbox.execute_data_analysis(file_data, prompt)
             await whatsapp.send_text(phone, result.get("stdout", "Summary complete"))
+        elif "audio" in mime_type:
+            await whatsapp.send_text(phone, "Voice notes are not yet supported for full processing, but I've received your audio.")
         else:
             await whatsapp.send_text(phone, f"File type {mime_type} not yet supported for analysis.")
     except Exception as e:
