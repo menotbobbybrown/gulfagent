@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import toast from "react-hot-toast";
 
 interface Approval {
   id: string;
@@ -51,6 +52,11 @@ export function ApprovalModal({ approval, onClose, onDecision }: ApprovalModalPr
         body: JSON.stringify({ decision }),
       });
       onDecision(approval.id, decision);
+      if (decision === "approved") {
+        toast.success("✓ Action approved");
+      } else {
+        toast("✗ Action denied", { icon: "⛔" });
+      }
     } catch {
       // Silent fail — will auto-deny on timeout
     } finally {

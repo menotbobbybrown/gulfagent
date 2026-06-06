@@ -79,6 +79,17 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    href: "/dashboard/admin",
+    label: "Admin",
+    adminOnly: true,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 1C4.686 1 2 3.686 2 7c0 1.867.804 3.7 2.4 5.2L8 16l3.6-3.8C13.196 10.7 14 8.867 14 7c0-3.314-2.686-6-6-6z" stroke="currentColor" strokeWidth="1.3" />
+        <circle cx="8" cy="7" r="2" stroke="currentColor" strokeWidth="1.3" />
+      </svg>
+    ),
+  },
 ];
 
 interface DashboardShellProps {
@@ -101,6 +112,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const getToken = useCallback(async () => {
     const { data: { session } } = await createClient().auth.getSession();
@@ -119,6 +131,13 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
         if (res.ok) {
           const { data } = await res.json();
           setUsage({ credits_used: data.credits_used, credits_limit: data.credits_limit, tier: data.tier });
+        }
+        // Check admin status
+        const adminRes = await fetch("/api/admin/orchestrator/status", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (adminRes.ok) {
+          setIsAdmin(true);
         }
       } catch {}
     }
@@ -224,7 +243,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => {
             const isActive =
               item.href === "/dashboard"
                 ? pathname === "/dashboard"

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import toast from "react-hot-toast";
 
 interface TaskInputProps {
   onTaskCreated?: (taskId: string) => void;
@@ -62,9 +63,12 @@ export function TaskInput({ onTaskCreated }: TaskInputProps) {
 
       const body = await res.json();
       setPrompt("");
+      toast.success("✓ Task started");
       onTaskCreated?.(body.data.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

@@ -87,6 +87,22 @@ MODEL_ROUTES = {
         "cost_per_1k_in": 0.000075,
         "cost_per_1k_out": 0.0003,
     },
+    "connector_careem": {
+        "primary": "google/gemini-flash-1.5", "secondary": "google/gemini-flash-1.5", "emergency": "google/gemini-flash-1.5",
+        "cost_per_1k_in": 0.000075, "cost_per_1k_out": 0.0003,
+    },
+    "connector_noon": {
+        "primary": "google/gemini-flash-1.5", "secondary": "google/gemini-flash-1.5", "emergency": "google/gemini-flash-1.5",
+        "cost_per_1k_in": 0.000075, "cost_per_1k_out": 0.0003,
+    },
+    "connector_talabat": {
+        "primary": "google/gemini-flash-1.5", "secondary": "google/gemini-flash-1.5", "emergency": "google/gemini-flash-1.5",
+        "cost_per_1k_in": 0.000075, "cost_per_1k_out": 0.0003,
+    },
+    "connector_dubai_now": {
+        "primary": "google/gemini-flash-1.5", "secondary": "google/gemini-flash-1.5", "emergency": "google/gemini-flash-1.5",
+        "cost_per_1k_in": 0.000075, "cost_per_1k_out": 0.0003,
+    },
 }
 
 MODEL_COST_MAP = {

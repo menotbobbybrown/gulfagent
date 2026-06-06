@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import toast from "react-hot-toast";
+
 interface UsageBarProps {
   creditsUsed: number;
   creditsLimit: number;
@@ -10,6 +13,14 @@ export function UsageBar({ creditsUsed, creditsLimit, tier }: UsageBarProps) {
   const pct = Math.min(100, (creditsUsed / creditsLimit) * 100);
   const isLow = pct >= 80;
   const isCritical = pct >= 95;
+  const warnedRef = useRef(false);
+
+  useEffect(() => {
+    if (pct >= 80 && !warnedRef.current) {
+      warnedRef.current = true;
+      toast.error(`⚠ Credits running low (${Math.round(pct)}% used). Upgrade to avoid interruption.`);
+    }
+  }, [pct]);
 
   const barColor = isCritical
     ? "#EF4444"
