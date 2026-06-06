@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import toast from "react-hot-toast";
 
 interface Skill {
   id: string;
@@ -80,6 +81,7 @@ export default function SkillsPage() {
       });
 
       if (res.ok) {
+        toast.success(isActivated ? `✗ ${slug} deactivated` : `✓ ${slug} activated`);
         fetchData();
       }
     } catch (err) {

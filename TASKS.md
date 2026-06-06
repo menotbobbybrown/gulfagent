@@ -158,6 +158,22 @@ Mark tasks ✅ when complete.
 
 ---
 
+## PHASE 8 — Production Final
+> Goal: Alembic chain complete, connector wiring, auto-seed, CDP fix, rate limiter fix, admin endpoints, admin page, toasts, docs.
+
+- [x] P10 — Alembic migration chain (002-005) with all historical migrations
+- [x] P11 — Connector routing wired into AgentManager
+- [x] P12 — Auto-seed skills on startup via lifespan
+- [x] P13 — CloakBrowser CDP support via cdp_url config
+- [x] P14 — Stable JWT-based rate limiter key extraction
+- [x] P15 — Admin endpoints: POST /users/{id}/make-admin, GET /users
+- [x] P16 — Frontend admin dashboard with orchestrator status, users table, test form
+- [x] P17 — Toast notifications via react-hot-toast (TaskInput, ApprovalModal, UsageBar, Skills)
+- [x] P18 — Seed skills uses INSERT ... ON CONFLICT DO NOTHING
+- [x] P19 — CHANGELOG.md updated for v0.8 Production Final
+
+---
+
 ## Notes for CTO
 
 - Start with T01-T09 backend, then T10-T18 frontend in parallel

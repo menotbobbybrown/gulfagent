@@ -161,13 +161,8 @@ SEED_SKILLS = [
 
 async def seed_skills(db: AsyncSession):
     """Inserts seed skills if they don't exist (idempotent)."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
     for skill_data in SEED_SKILLS:
-        # Check if exists
-        result = await db.execute(select(Skill).where(Skill.slug == skill_data["slug"]))
-        if result.scalar_one_or_none():
-            continue
-            
-        skill = Skill(**skill_data)
-        db.add(skill)
-    
+        stmt = pg_insert(Skill).values(**skill_data).on_conflict_do_nothing(index_elements=['slug'])
+        await db.execute(stmt)
     await db.commit()

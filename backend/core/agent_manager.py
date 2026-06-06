@@ -16,6 +16,10 @@ class ManagerAgent:
         user_tier = state.get("user_tier", "basic")
         task_type = state.get("task_type", "simple_qa")
         
+        # Connector routing
+        if task_type.startswith("connector_"):
+            return await self._run_connector(state)
+
         # For complex research tasks, use multi-step delegation
         if task_type in ("research_task",):
             return await self._run_multi_step_research(state)
@@ -160,6 +164,26 @@ class ManagerAgent:
                 "fallback_used": decomp_res.get("fallback_used") or syn_res.get("fallback_used"),
                 "decomp_model": decomp_res.get("model_used")
             }
+        }
+    
+    async def _run_connector(self, state: dict) -> dict:
+        from connectors import CareemConnector, NoonConnector, TalabatConnector, DubaiNowConnector
+        connector_map = {
+            "connector_careem": CareemConnector,
+            "connector_noon": NoonConnector,
+            "connector_talabat": TalabatConnector,
+            "connector_dubai_now": DubaiNowConnector,
+        }
+        ConnClass = connector_map.get(state["task_type"])
+        if not ConnClass:
+            return {**state, "error": f"Unknown connector: {state['task_type']}"}
+        conn = ConnClass(state["task_id"], state["user_id"])
+        result = await conn.run(state["prompt"])
+        return {
+            **state,
+            "result": str(result.get("data", result.get("result", ""))),
+            "error": result.get("error"),
+            "metadata": {**state.get("metadata", {}), "connector": state["task_type"]}
         }
 
 manager = ManagerAgent()

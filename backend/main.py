@@ -72,6 +72,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Scheduler start failed (non-fatal): %s", exc)
 
+    # Auto-seed skills
+    try:
+        from db.seed_skills import seed_skills
+        from db.session import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            await seed_skills(db)
+        logger.info("✓ Skills seeded")
+    except Exception as exc:
+        logger.warning("Skill seeding failed (non-fatal): %s", exc)
+
     # M1 — Auto-register WhatsApp webhook
     try:
         if settings.evolution_api_url and settings.evolution_api_key:

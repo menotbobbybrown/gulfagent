@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { RTLProvider } from "@/lib/rtl-provider";
+import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
   title: "GulfAgent — AI Agent Platform for GCC",
@@ -22,6 +23,25 @@ export default function RootLayout({
         <RTLProvider>
           {children}
         </RTLProvider>
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: "#111",
+              color: "#E5E0D8",
+              border: "1px solid #242424",
+              borderRadius: "12px",
+              fontSize: "14px",
+            },
+            success: {
+              iconTheme: { primary: "#10B981", secondary: "#0A0A0A" },
+            },
+            error: {
+              iconTheme: { primary: "#EF4444", secondary: "#0A0A0A" },
+            },
+          }}
+        />
       </body>
     </html>
   );

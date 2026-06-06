@@ -177,13 +177,16 @@ class BrowserAgent:
             )
 
             if settings.cloakbrowser_ws_url:
-                from playwright.async_api import async_playwright
-                playwright = await async_playwright().start()
-                browser_cdp = await playwright.chromium.connect_over_cdp(settings.cloakbrowser_ws_url)
-                browser = None  # browser-use Agent handles cdp differently
+                browser_config = BrowserConfig(
+                    headless=True,
+                    cdp_url=settings.cloakbrowser_ws_url
+                )
             else:
-                browser_config = BrowserConfig(headless=self.headless, disable_security=False)
-                browser = Browser(config=browser_config)
+                browser_config = BrowserConfig(
+                    headless=self.headless,
+                    disable_security=False
+                )
+            browser = Browser(config=browser_config)
 
             step_counter = {"n": 0}
 

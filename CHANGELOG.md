@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9] — Production Final
+**Date:** June 2025
+
+### Added
+- Alembic migration chain (002-005) with all historical migrations
+- Connector routing wired into AgentManager
+- Auto-seed skills on startup
+- CloakBrowser CDP support via cdp_url config
+- Stable JWT-based rate limiter key
+- Admin endpoints: POST /users/{id}/make-admin, GET /users
+- Frontend admin dashboard page with orchestrator status
+- Toast notifications via react-hot-toast
+- Conditional Langfuse + Sentry initialization
+- Daily per-user spend cap ($2 basic, $20 pro)
+- Per-user tier rate limiting (10/min basic, 30/min pro)
+- Evolution API health check on startup
+- BACKEND_URL env var for webhook registration
+
+### Changed
+- Fixed CloakBrowser CDP wiring (was setting None)
+- seed_skills now uses INSERT ... ON CONFLICT
+- Cost metadata propagated through all AgentManager handlers
+- All docs updated for v0.9 features
+
+---
+
 ## [0.8] — E2B Sandbox + Multi-Agent System
 **Date:** June 2025
 
