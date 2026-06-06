@@ -24,6 +24,16 @@ from db.session import AsyncSessionLocal
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+langfuse_handler = None
+if settings.langfuse_public_key and settings.langfuse_secret_key:
+    from langfuse.callback import CallbackHandler
+    langfuse_handler = CallbackHandler(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=settings.langfuse_host or "https://cloud.langfuse.com",
+    )
+    logger.info("Langfuse callback handler initialized")
+
 
 # ──────────────────────────────────────────────
 # State
@@ -158,7 +168,11 @@ async def run_task(
     }
 
     try:
-        final_state = await pipeline.ainvoke(initial_state)
+        callbacks = [langfuse_handler] if langfuse_handler else None
+        final_state = await pipeline.ainvoke(
+            initial_state,
+            config={"callbacks": callbacks} if callbacks else None
+        )
         return {
             "result": final_state.get("result", ""),
             "task_type": final_state.get("task_type", "simple_qa"),

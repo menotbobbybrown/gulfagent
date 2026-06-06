@@ -2,6 +2,7 @@ import time
 import asyncio
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
+from sqlalchemy import func, select
 from config import get_settings
 
 settings = get_settings()
@@ -216,15 +217,31 @@ class ModelOrchestrator:
             "fallback_used": result["fallback_used"]
         })
 
-    def get_cost_today(self) -> float:
-        now = time.time()
-        one_day_ago = now - 86400
-        return sum(log["cost_usd"] for log in self.usage_log if log["timestamp"] > one_day_ago)
+    async def get_cost_today(self) -> float:
+        from db.session import AsyncSessionLocal
+        from sqlalchemy import select, func
+        from db.models import Task
+        from datetime import datetime, timedelta
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(func.coalesce(func.sum(Task.cost_usd), 0))
+                .where(Task.created_at >= today_start)
+            )
+            return float(result.scalar() or 0.0)
 
-    def get_cost_this_month(self) -> float:
-        now = time.time()
-        thirty_days_ago = now - (86400 * 30)
-        return sum(log["cost_usd"] for log in self.usage_log if log["timestamp"] > thirty_days_ago)
+    async def get_cost_this_month(self) -> float:
+        from db.session import AsyncSessionLocal
+        from sqlalchemy import select, func
+        from db.models import Task
+        from datetime import datetime, timedelta
+        month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(func.coalesce(func.sum(Task.cost_usd), 0))
+                .where(Task.created_at >= month_start)
+            )
+            return float(result.scalar() or 0.0)
     
     def get_stats(self) -> dict:
         if not self.usage_log:

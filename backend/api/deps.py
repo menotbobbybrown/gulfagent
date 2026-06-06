@@ -12,8 +12,10 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Query, Security, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client, create_client
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
+from db.session import get_db
 
 settings = get_settings()
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -75,3 +77,17 @@ async def get_current_user_id(
         raise
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Could not validate credentials") from exc
+
+
+async def get_current_admin(
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> UUID:
+    from fastapi import HTTPException
+    from sqlalchemy import select
+    from db.models import User
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user_id

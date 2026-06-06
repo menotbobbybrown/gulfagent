@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     next_public_supabase_url: str = ""
     next_public_supabase_anon_key: str = ""
     next_public_app_url: str = "http://localhost:3000"
-    backend_url: str = ""
+    backend_url: str = "http://localhost:8000"
     language_detection_enabled: bool = True
 
     # Payments - HyperPay
@@ -65,6 +65,9 @@ class Settings(BaseSettings):
 
     # T78 — Sentry (optional, error tracking)
     sentry_dsn: str = ""
+
+    # T80 — CloakBrowser (anti-detect browser)
+    cloakbrowser_ws_url: str = ""
 
 
 @lru_cache

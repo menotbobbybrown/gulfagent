@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Any
 from config import get_settings
-from api.deps import get_current_user_id
+from api.deps import get_current_admin
+from db.session import get_db
 from core.model_orchestrator import orchestrator, MODEL_ROUTES
 from uuid import UUID
 
@@ -14,14 +15,13 @@ class OrchestratorTestRequest(BaseModel):
     task_type: str = "simple_qa"
 
 @router.get("/orchestrator/status")
-async def get_orchestrator_status(user_id: UUID = Depends(get_current_user_id)):
-    # In a real app, check if user is admin. For now, assume authenticated users can see this.
+async def get_orchestrator_status(user_id: UUID = Depends(get_current_admin)):
     stats = orchestrator.get_stats()
     return {
         "data": {
             "available_routes": list(MODEL_ROUTES.keys()),
-            "cost_today_usd": orchestrator.get_cost_today(),
-            "cost_month_usd": orchestrator.get_cost_this_month(),
+            "cost_today_usd": await orchestrator.get_cost_today(),
+            "cost_month_usd": await orchestrator.get_cost_this_month(),
             **stats
         },
         "error": None
@@ -30,9 +30,8 @@ async def get_orchestrator_status(user_id: UUID = Depends(get_current_user_id)):
 @router.post("/orchestrator/test")
 async def test_orchestrator(
     body: OrchestratorTestRequest,
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: UUID = Depends(get_current_admin)
 ):
-    # In a real app, check if user is admin
     try:
         result = await orchestrator.run(
             task_type=body.task_type,
