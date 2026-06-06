@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.approval_manager import ApprovalRequiredError
+
 logger = logging.getLogger(__name__)
 
 
@@ -151,13 +153,12 @@ class BrowserAgent:
         Returns BrowserResult with steps + screenshots.
         Raises ApprovalRequiredError before destructive actions.
         """
+        from config import get_settings
+        settings = get_settings()
         try:
             from browser_use import Agent, Browser, BrowserConfig
             from langchain_openai import ChatOpenAI
             from core.model_orchestrator import MODEL_ROUTES
-
-            from config import get_settings
-            settings = get_settings()
 
             route = MODEL_ROUTES.get("browser_task")
             model_name = route["primary"]
@@ -175,11 +176,14 @@ class BrowserAgent:
                 },
             )
 
-            browser_config = BrowserConfig(
-                headless=self.headless,
-                disable_security=False,
-            )
-            browser = Browser(config=browser_config)
+            if settings.cloakbrowser_ws_url:
+                from playwright.async_api import async_playwright
+                playwright = await async_playwright().start()
+                browser_cdp = await playwright.chromium.connect_over_cdp(settings.cloakbrowser_ws_url)
+                browser = None  # browser-use Agent handles cdp differently
+            else:
+                browser_config = BrowserConfig(headless=self.headless, disable_security=False)
+                browser = Browser(config=browser_config)
 
             step_counter = {"n": 0}
 
@@ -220,11 +224,12 @@ class BrowserAgent:
 
                     screenshot_path = None
                     try:
-                        page = await browser.get_current_page()
-                        if page:
-                            screenshot_bytes = await page.screenshot(full_page=False)
-                            screenshot_path = str(self._screenshot_dir / f"step_{n:03d}.png")
-                            Path(screenshot_path).write_bytes(screenshot_bytes)
+                        if browser:
+                            page = await browser.get_current_page()
+                            if page:
+                                screenshot_bytes = await page.screenshot(full_page=False)
+                                screenshot_path = str(self._screenshot_dir / f"step_{n:03d}.png")
+                                Path(screenshot_path).write_bytes(screenshot_bytes)
                     except Exception as ss_err:
                         logger.debug("Screenshot failed at step %d: %s", n, ss_err)
 
@@ -257,7 +262,8 @@ class BrowserAgent:
                 timeout=self.timeout_seconds,
             )
 
-            await browser.close()
+            if browser:
+                await browser.close()
 
             # Extract result text
             result_text = ""

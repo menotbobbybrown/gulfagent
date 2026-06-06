@@ -14,19 +14,23 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# ── T78: Sentry (opt-in) ──
-# import sentry_sdk
-# from sentry_sdk.integrations.fastapi import FastApiIntegration
-# import os
-# SENTRY_DSN = os.getenv("SENTRY_DSN", "")
-# if SENTRY_DSN:
-#     sentry_sdk.init(
-#         dsn=SENTRY_DSN,
-#         integrations=[FastApiIntegration()],
-#         traces_sample_rate=0.1,
-#         environment=os.getenv("APP_ENV", "production"),
-#     )
-#     logger.info("Sentry initialized")
+from config import get_settings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+import sentry_sdk
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        traces_sample_rate=0.1,
+        environment="production",
+    )
+    logger.info("✓ Sentry initialized")
 
 from api.tasks import router as tasks_router
 from api.automations import router as automations_router
@@ -38,18 +42,10 @@ from api.approvals import router as approvals_router
 from api.users import router as users_router
 from api.admin import router as admin_router
 from agents.scheduler_agent import scheduler
-from config import get_settings
 from core.rate_limiter import limiter
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
-)
-logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 # ──────────────────────────────────────────────
@@ -84,6 +80,18 @@ async def lifespan(app: FastAPI):
             webhook_url = f"{base_url}/api/webhooks/whatsapp"
             await whatsapp.register_webhook(webhook_url)
             logger.info("✓ WhatsApp webhook registered")
+
+        # Check Evolution API connection health
+        try:
+            if settings.evolution_api_url and settings.evolution_api_key:
+                from agents.whatsapp_agent import whatsapp
+                status = await whatsapp.get_instance_status()
+                if status.get("error"):
+                    logger.warning("⚠ WhatsApp instance not connected: %s", status["error"])
+                else:
+                    logger.info("✓ WhatsApp instance connected")
+        except Exception as exc:
+            logger.warning("WhatsApp health check failed: %s", exc)
     except Exception as exc:
         logger.warning("WhatsApp webhook registration failed (non-fatal): %s", exc)
 

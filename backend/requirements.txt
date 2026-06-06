@@ -39,8 +39,8 @@ e2b-code-interpreter==1.0.3
 httpx==0.28.1
 
 # Observability (Phase 4)
-# langfuse==2.x
-# sentry-sdk[fastapi]==x.x
+langfuse==2.7.3
+sentry-sdk[fastapi]==2.19.2
 
 # Rate limiting (Phase 4)
 slowapi==0.1.9

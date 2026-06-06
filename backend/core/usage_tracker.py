@@ -38,6 +38,27 @@ TIER_AUTOMATION_LIMITS: dict[str, int] = {
     "enterprise": 999_999,
 }
 
+DAILY_SPEND_CAPS = {"basic": 2.0, "pro": 20.0, "enterprise": 999.0}
+
+async def check_daily_spend(session: AsyncSession, user_id: UUID, user_tier: str = "basic") -> None:
+    from sqlalchemy import func
+    from db.models import Task
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    result = await session.execute(
+        select(func.coalesce(func.sum(Task.cost_usd), 0))
+        .where(Task.user_id == user_id, Task.created_at >= today)
+    )
+    daily_spend = float(result.scalar() or 0.0)
+    cap = DAILY_SPEND_CAPS.get(user_tier, 2.0)
+    if daily_spend >= cap:
+        raise HTTPException(status_code=429, detail={
+            "code": "DAILY_SPEND_EXCEEDED",
+            "message": f"Daily spend limit of ${cap:.2f} reached. Upgrade to Pro for higher limits.",
+            "daily_spend": round(daily_spend, 4),
+            "daily_cap": cap,
+            "tier": user_tier,
+        })
+
 
 def _year_month() -> str:
     return datetime.utcnow().strftime("%Y-%m")
@@ -80,6 +101,10 @@ async def check_credits_before_task(
         raise HTTPException(status_code=404, detail="User not found")
 
     limit = TIER_LIMITS.get(user.subscription_tier, settings.credits_basic)
+
+    # T79 — Daily spend cap
+    await check_daily_spend(session, user_id, user.subscription_tier)
+
     usage = await _get_or_create_usage(session, user_id, limit)
 
     if usage.credits_used + estimated_cost > limit:
