@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/.next",
+  "installCommand": "cd frontend && npm install",
+  "framework": "nextjs",
+  "ignoreCommand": "git diff HEAD^ HEAD --quiet -- backend/",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "$BACKEND_URL/api/:path*"
+    }
+  ]
+}

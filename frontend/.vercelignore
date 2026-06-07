@@ -1,0 +1,10 @@
+../backend
+../infra
+../docker-compose.yml
+../.env.example
+../CLAUDE.md
+../TASKS.md
+../ARCHITECTURE.md
+../CHANGELOG.md
+../README.md
+../railway.toml
